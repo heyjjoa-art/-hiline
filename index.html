@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>하이라인닷넷 업무 자동화 도구</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --panel: #ffffff;
+    --border: #e3e5e9;
+    --text: #1f2328;
+    --text-dim: #6b7280;
+    --accent: #2563eb;
+    --accent-bg: #eef2ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Pretendard", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* 좌측 메뉴 */
+  nav.sidebar {
+    width: 240px;
+    flex-shrink: 0;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 20px 0;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    transition: width .15s ease;
+    /* overflow는 hidden으로 두지 않는다 — 접힌 메뉴 항목은 display:none으로 이미 감춰지고,
+       overflow:hidden을 쓰면 사이드바 테두리에 절반 걸치게 배치한 접기 버튼(오른쪽으로
+       -13px 튀어나옴)까지 같이 잘려버린다. */
+    overflow: visible;
+  }
+  nav.sidebar h1 {
+    font-size: 16px;
+    font-weight: 700;
+    padding: 0 20px 16px;
+    margin: 0 0 8px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  nav.sidebar ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  nav.sidebar li.menu-item {
+    padding: 10px 20px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text-dim);
+    border-left: 3px solid transparent;
+    white-space: nowrap;
+  }
+  nav.sidebar li.menu-item:hover {
+    background: var(--accent-bg);
+    color: var(--text);
+  }
+  nav.sidebar li.menu-item.active {
+    background: var(--accent-bg);
+    color: var(--accent);
+    border-left-color: var(--accent);
+    font-weight: 600;
+  }
+  /* 메뉴 접기/펼치기 토글 버튼 — 사이드바 오른쪽 위 모서리에 걸쳐서 항상 보이게 둔다 */
+  .sidebar-toggle-btn {
+    position: absolute;
+    top: 16px;
+    right: -13px;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    z-index: 5;
+  }
+  .sidebar-toggle-btn:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  nav.sidebar.collapsed {
+    width: 48px;
+  }
+  nav.sidebar.collapsed .sidebar-title-text,
+  nav.sidebar.collapsed ul#menu-list {
+    display: none;
+  }
+  nav.sidebar.collapsed h1 {
+    border-bottom: none;
+  }
+
+  /* 콘텐츠 영역 */
+  main {
+    flex: 1;
+    padding: 32px 40px;
+    max-width: 900px;
+  }
+  main.wide-content {
+    max-width: none;
+  }
+  main h2 {
+    margin-top: 0;
+    font-size: 22px;
+  }
+  main p.desc {
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+  }
+  .card h3 {
+    margin-top: 0;
+    font-size: 15px;
+  }
+  code {
+    background: #f0f1f3;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+  .badge {
+    display: inline-block;
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #fef3c7;
+    color: #92400e;
+    margin-left: 8px;
+  }
+
+  /* 드래그&드롭 업로드 영역 */
+  .dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-dim);
+    cursor: pointer;
+    background: var(--panel);
+    transition: border-color .15s, background .15s;
+  }
+  .dropzone:hover,
+  .dropzone.dragover {
+    border-color: var(--accent);
+    background: var(--accent-bg);
+  }
+  .btn {
+    display: inline-block;
+    margin-top: 16px;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn:hover { opacity: .9; }
+  .status-msg {
+    margin-top: 12px;
+    font-size: 13px;
+    color: var(--text-dim);
+    min-height: 18px;
+  }
+
+  /* 복지제도 관리 */
+  .wf-tabs {
+    display: flex;
+    gap: 4px;
+    margin: 20px 0 0;
+  }
+  .wf-tab {
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    background: #fff;
+    border-radius: 6px 6px 0 0;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .wf-tab.active {
+    background: var(--accent-bg);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  #wf-hiworks-status:empty,
+  #wf-status:empty {
+    margin: 0;
+    min-height: 0;
+  }
+  .wf-panel {
+    border: 1px solid var(--border);
+    border-radius: 0 8px 8px 8px;
+    background: #fff;
+    padding: 16px;
+    overflow-x: auto;
+  }
+  .wf-table {
+    border-collapse: collapse;
+    font-size: 10px;
+    color: #374151;
+    /* width:auto인 <table>은 블록 요소라 부모 컨테이너 전체 너비로 늘어나면서 auto layout이
+       남는 공간을 컬럼마다 비례 배분해버린다(컬럼 수가 적은 복지포인트/개인별지원사항 표에서
+       팀명~근속연수 칸이 연차내역보다 훨씬 넓게 보이던 원인). fit-content로 내용 너비만큼만
+       차지하게 해서 min-width로 지정한 폭이 실제로 반영되게 한다. */
+    width: fit-content;
+  }
+  .wf-table th, .wf-table td {
+    border: 1px solid var(--border);
+    padding: 4px 6px;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .wf-table th {
+    background: #f7f8fa;
+    white-space: normal;
+    word-break: keep-all;
+    max-width: 70px;
+  }
+  .wf-table input {
+    width: 100%;
+    min-width: 40px;
+    border: 1px solid transparent;
+    background: transparent;
+    text-align: center;
+    font-size: 10px;
+    color: #374151;
+    padding: 2px;
+    box-sizing: border-box;
+    font-family: inherit;
+  }
+  .wf-table td:nth-child(1) input,
+  .wf-table td:nth-child(2) input {
+    min-width: 92px;
+  }
+  .wf-table td:nth-child(4) input,
+  .wf-table td:nth-child(5) input {
+    min-width: 60px;
+  }
+  .wf-table td:nth-last-child(2) input {
+    min-width: 120px;
+  }
+  .wf-table input:focus {
+    border-color: var(--accent);
+    background: #fff;
+    outline: none;
+  }
+  td.wf-readonly {
+    background: #fafafa;
+  }
+  .wf-detail-row td {
+    background: #fbfbfd;
+  }
+
+  /* 연차내역 탭 - 실제 연차관리 엑셀 서식 색상에 맞춤
+     헤더행(th) 순서: 1~6 팀명~연차사용내역, 7~9 기준/사용/잔여, 10 10주년 장기근속(5일),
+     11~15 예비군민방위~기타휴가, 16 연간합계, 17 비고, 18 삭제버튼
+     데이터행(td)은 1~5 팀명~근속 연수까지는 위치가 고정이지만, 그 다음 연차사용내역은
+     연이은 날짜가 colspan으로 병합돼 행마다 칸 수가 달라진다 — 그래서 기준/사용/잔여 이후
+     컬럼들은 nth-child 위치가 아니라 JS에서 붙여주는 클래스(wf-col-*)로 지정한다. */
+  .wf-leave-table th:nth-child(-n+6),
+  .wf-leave-table th:nth-child(n+11):nth-child(-n+15) {
+    background: #ff99cc;
+  }
+  .wf-leave-table th:nth-child(n+7):nth-child(-n+9),
+  .wf-leave-table th:nth-child(16) {
+    background: #d8e4bc;
+  }
+  .wf-leave-table th:nth-child(10) {
+    background: #d9d9d9;
+  }
+  /* 복지포인트 내역의 팀명~근속 연수 칸을 연차내역과 같은 색/폭/폰트로 맞출 때 쓰는 클래스.
+     min-width만으로는 auto table layout이 남는 공간을 컬럼마다 비례 배분해버려서(컬럼 수가
+     적은 표일수록 심함) 실제로는 연차내역보다 훨씬 넓게 렌더링되는 문제가 있었다 — 그래서
+     연차내역을 제외한 wf-table에는 table-layout:fixed를 걸어둔다. 실제 컬럼 폭은
+     renderPointsTable()이 만드는 <colgroup>/<col>로 지정한다 — th에 폭을 걸면 표 맨 위에
+     그룹 제목행(예: "개인별복지사항" colspan행) 같은 게 추가되는 순간 "첫 번째 행" 기준이
+     깨지므로, colgroup처럼 행 구조와 무관한 방식만 안정적으로 유지된다. 아래 td 폭 지정은
+     colgroup과 같은 값으로 맞춰서 이중 안전장치 역할만 한다. */
+  th.wf-roster-col {
+    background: #ff99cc;
+  }
+  /* 복지포인트 표의 지급포인트/잔여한도/사용내역 헤더 — 연차내역의 기준/사용/잔여(연차
+     지급·사용) 헤더와 같은 초록으로 맞춘다(같은 개념: 지급/잔여/사용 현황). */
+  th.wf-points-green {
+    background: #d8e4bc;
+  }
+  th.wf-points-sky {
+    background: #cfe8f5;
+  }
+  /* 팀명~근속연수는 이제 연차내역 기준 읽기전용 칸(rosterReadonlyCell, <input> 없음)이라
+     td 자체에 폰트 크기를 지정한다 — 연차내역(.wf-leave-table, 11px)과 동일하게 맞춘다. */
+  .wf-table td.wf-roster-col {
+    font-size: 10px;
+  }
+  /* 성명/직급/입사일/근속연수 칸은 연한 회색으로 — 팀명(분홍)과 구분되는 재직자 정보
+     블록으로 보이게 한다. 연차내역/복지포인트 둘 다 같은 클래스를 쓰므로 함께 적용된다. */
+  .wf-table td.wf-roster-col:not(.wf-roster-team) {
+    background: #f2f2f2;
+  }
+  /* 복지포인트의 팀명 칸은 rosterReadonlyCell이 재사용하는 td.wf-readonly의 회색(#fafafa)이
+     기본으로 깔리는데, 연차내역의 팀명 칸(편집 가능한 흰 칸)과 색을 맞추려면 흰색으로
+     덮어써야 한다. */
+  .wf-table td.wf-roster-team {
+    background: #fff;
+  }
+  /* 복지포인트 표의 팀명 병합은 진짜 rowSpan 대신 CSS로만 흉내낸다(위 fakeTeamMerge 주석
+     참고) — 이어지는 칸의 위쪽 테두리와 바로 위 칸의 아래쪽 테두리를 둘 다 없애야
+     border-collapse에서 경계선이 완전히 사라져 진짜 병합처럼 보인다. */
+  .wf-table td.wf-team-merged {
+    border-top: none;
+  }
+  .wf-table td.wf-team-merge-bottom {
+    border-bottom: none;
+  }
+  /* 여러 행이 병합된 그룹의 팀명은 첫 행 칸 안에 절대좌표로 배치한 라벨(JS가 그룹 전체
+     높이를 재서 height를 지정)로 그려서, 진짜 rowSpan처럼 그룹 전체의 세로 정중앙에
+     보이게 한다 — position:relative인 이 칸(host)이 라벨의 기준점이 된다. */
+  .wf-table td.wf-team-merge-host {
+    position: relative;
+  }
+  .wf-team-merge-label {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  /* .wf-table td:nth-child(1)/(2)/(4)/(5) input, td:nth-last-child(2) input에 걸린
+     min-width(92px/60px/120px, 위 참고)는 연차내역처럼 컬럼 수가 많아 폭 계산이 안 겹치는
+     표를 기준으로 만든 값이라, table-layout:fixed로 폭을 직접 지정한(또는 남는 공간을
+     나눠 갖는) 표에서는 셀 너비보다 커져서 글씨가 옆 칸과 겹쳐 보이는 원인이 된다.
+     연차내역을 제외한 wf-table의 모든 입력칸은 min-width를 없애서 항상 셀 폭(width:100%)에
+     맞춰지도록 한다. */
+  .wf-table:not(.wf-leave-table) td input {
+    min-width: 0;
+  }
+  .wf-table:not(.wf-leave-table) {
+    table-layout: fixed;
+    /* 이제 colgroup이 12칸 전부(팀명~부모님검진) 폭을 지정하므로, 표 자체는 그 합계만큼만
+       차지하면 된다(위 .wf-table의 fit-content를 그대로 따름) — width:auto로 두면 남는
+       공간을 채우려고 지정한 폭을 다시 비례로 늘려버리는 브라우저도 있어 위험하다. */
+    width: fit-content;
+  }
+  .wf-table:not(.wf-leave-table) th,
+  .wf-table:not(.wf-leave-table) td {
+    box-sizing: border-box;
+  }
+  .wf-table:not(.wf-leave-table) td.wf-roster-team {
+    width: 75px;
+  }
+  .wf-table:not(.wf-leave-table) td.wf-roster-name {
+    width: 75px;
+  }
+  .wf-table:not(.wf-leave-table) td.wf-roster-position {
+    width: 53px;
+  }
+  .wf-table:not(.wf-leave-table) td.wf-roster-hire {
+    width: 69px;
+  }
+  .wf-table:not(.wf-leave-table) td.wf-roster-tenure {
+    width: 69px;
+  }
+  /* 연차사용내역은 연이은 날짜가 colspan으로 병합돼 행마다 칸 수가 달라지므로, 데이터 칸
+     색상은 nth-child 대신 JS에서 붙여주는 클래스(wf-col-*, wf-usage-cell) 기준으로 지정한다. */
+  .wf-leave-table td.wf-col-used {
+    background: #ffffcc;
+  }
+  .wf-leave-table td.wf-col-remaining {
+    background: #ffcccc;
+  }
+  .wf-leave-table td.wf-col-longService {
+    background: #d9d9d9;
+  }
+  .wf-leave-table td.wf-col-yeartotal {
+    background: #ffffcc;
+  }
+  .wf-leave-table td.wf-usage-cell {
+    background: #fffce6;
+  }
+  /* 퇴사자 행 — 컬럼별 색상보다 우선해서 전체를 회색으로 덮는다. 연차내역뿐 아니라 복지포인트/
+     개인별지원사항도 이름으로 대조해서 같은 클래스를 붙이므로 wf-table 전체에 적용한다. */
+  .wf-table tr.wf-resigned-row td {
+    background: #d9d9d9 !important;
+    color: var(--text-dim);
+  }
+  .wf-leave-table,
+  .wf-leave-table input {
+    font-size: 10px;
+  }
+  .wf-leave-table th,
+  .wf-leave-table td {
+    padding: 2px 3px;
+    text-align: center;
+    vertical-align: middle;
+  }
+  .wf-leave-table th {
+    max-width: none;
+  }
+  .wf-leave-table input {
+    text-align: center;
+  }
+  .wf-leave-table input {
+    min-width: 30px;
+  }
+  .wf-leave-table td:nth-child(1) input {
+    min-width: 68px;
+  }
+  .wf-leave-table td:nth-child(2) input {
+    min-width: 46px;
+  }
+  .wf-leave-table td:nth-child(3) input {
+    min-width: 36px;
+  }
+  .wf-leave-table td:nth-child(4) input {
+    min-width: 62px;
+  }
+  .wf-leave-table td:nth-child(5) input {
+    min-width: 26px;
+  }
+  .wf-leave-table td:nth-last-child(2) input {
+    min-width: 80px;
+  }
+  .wf-leave-table td.wf-usage-cell input {
+    min-width: 28px;
+    width: 100%;
+    padding: 2px 1px;
+  }
+  .wf-mini-table {
+    border-collapse: collapse;
+    font-size: 10px;
+    margin: 6px auto;
+    max-width: 100%;
+  }
+  .wf-mini-table th, .wf-mini-table td {
+    border: 1px solid var(--border);
+    padding: 3px 6px;
+  }
+  .wf-link-btn {
+    background: none;
+    border: none;
+    color: var(--accent);
+    cursor: pointer;
+    text-decoration: underline;
+    font-size: 12px;
+    padding: 0;
+  }
+  .wf-del-btn {
+    background: #fee2e2;
+    color: #b91c1c;
+    border: none;
+    border-radius: 4px;
+    padding: 3px 8px;
+    cursor: pointer;
+    font-size: 11px;
+  }
+  .wf-resign-btn {
+    background: #fef3c7;
+    color: #92400e;
+    border: none;
+    border-radius: 4px;
+    padding: 3px 8px;
+    cursor: pointer;
+    font-size: 11px;
+  }
+  .wf-resign-btn.wf-resign-btn-restore {
+    background: #dbeafe;
+    color: #1e40af;
+  }
+  .wf-add-btn {
+    margin-top: 12px;
+  }
+  .wf-add-btn,
+  #wf-hiworks-sync-btn,
+  #wf-download-btn {
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  /* 대리점 수수료 정산 */
+  .ac-table td textarea {
+    width: 100%;
+    min-width: 140px;
+    border: 1px solid transparent;
+    background: transparent;
+    text-align: left;
+    font-size: 12px;
+    padding: 2px;
+    box-sizing: border-box;
+    font-family: inherit;
+    resize: vertical;
+  }
+  .ac-table td textarea:focus {
+    border-color: var(--accent);
+    background: #fff;
+    outline: none;
+  }
+  .ac-table tr.ac-row-carry td {
+    background: #fff8e6;
+  }
+  .ac-table tr.ac-row-total td {
+    background: var(--accent-bg);
+  }
+  .ac-table tr.ac-row-blank td {
+    background: #fafafa;
+  }
+</style>
+</head>
+<body>
+
+<nav class="sidebar" id="sidebar">
+  <button id="sidebar-toggle" class="sidebar-toggle-btn" title="메뉴 접기/펼치기" type="button">‹</button>
+  <h1><span class="sidebar-title-text">업무 자동화 도구</span></h1>
+  <ul id="menu-list"></ul>
+</nav>
+
+<main id="content"></main>
+
+<script src="vendor/exceljs.min.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="tools/templates/template-data.js"></script>
+<script src="tools/tax-invoice-convert.js"></script>
+<script src="tools/welfare-management.js"></script>
+<script src="tools/agency-commission.js"></script>
+<script src="tools/giro-draft-preview.js"></script>
+<script src="tools/mail-inbox-preview.js"></script>
+<script>
+  // ── 메뉴 설정: 새 기능을 추가하려면 이 배열에 항목을 추가하고
+  // ── 아래 sections 객체에 렌더 함수(및 필요하면 init 함수)를 정의하면 된다.
+  const menuItems = [
+    { id: "welfare", label: "연차/복지제도" },
+    { id: "mail", label: "메일" },
+    { id: "tax-invoice", label: "세금계산서 양식수정" },
+    { id: "agency-commission", label: "대리점 수수료 정산" },
+    { id: "giro-draft", label: "지로청구서 자동기안" },
+  ];
+
+  const sections = {
+    mail: () => `
+      <h2>메일</h2>
+      <p class="desc">
+        eunhye@hilineisp.net로 오는 메일의 최신 수신함 목록입니다. 로그인 세션을 직접 다루는
+        작업이라 이 브라우저 페이지 자체에서는 실행할 수 없지만, PC에 켜둔 작은 로컬 도우미
+        프로그램을 통해 아래에서 "새로고침" 버튼만으로 확인할 수 있습니다.
+      </p>
+
+      <div class="card">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <h3 style="margin:0;">받은 메일함</h3>
+          <button id="mail-refresh-btn" class="btn" style="margin-top:0;">새로고침</button>
+        </div>
+        <div id="mail-status" class="status-msg"></div>
+        <div id="mail-list" style="margin-top:8px;"></div>
+      </div>
+
+      <div class="card">
+        <h3>실행 방법 <span class="badge">안내</span></h3>
+        <p class="desc" style="margin-top:0;">
+          이 기능은 <code>tools/helper-server/server.js</code>라는 작은 로컬 도우미 프로그램이 켜져
+          있어야 동작합니다(지로·HIMS 동기화 기능과 공용). 위 "새로고침"을 눌렀는데 "도우미 서버에
+          연결할 수 없습니다"라고 뜨면, <code>tools/helper-server/start-server-now.bat</code>을 한 번
+          실행해주세요. 최초 설정 방법은 <code>tools/helper-server/README.md</code>를 참고하세요
+          (메일플러그 앱 비밀번호 발급 필요).
+        </p>
+      </div>
+    `,
+
+    "tax-invoice": () => `
+      <h2>세금계산서 양식수정</h2>
+      <p class="desc">
+        원본 발행건(전양식) 파일을 올리면 대량등록 양식(정발행)으로 자동 변환해서 다운로드합니다.
+      </p>
+      <div class="card">
+        <div id="ti-dropzone" class="dropzone">
+          📄 전양식 xlsx 파일을 여기로 드래그하거나 클릭해서 선택하세요
+          <input type="file" id="ti-file-input" accept=".xlsx" style="display:none">
+        </div>
+        <button id="ti-convert-btn" class="btn">변환 및 다운로드</button>
+        <div id="ti-status" class="status-msg"></div>
+      </div>
+    `,
+
+    welfare: () => `
+      <h2>연차/복지제도</h2>
+
+      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:0;">
+        <div class="wf-tabs" style="margin:0;">
+          <button class="wf-tab active" data-tab="leave">연차내역</button>
+          <button class="wf-tab" data-tab="points">복지포인트 내역</button>
+        </div>
+        <div id="wf-header-controls" style="display:flex; align-items:center; gap:8px;">
+          <label style="font-size:13px;">기준연도
+            <input type="number" id="wf-year" style="width:70px; margin-left:4px; padding:5px 6px; border:1px solid var(--border); border-radius:4px;">
+          </label>
+          <button id="wf-repair-btn" class="btn" style="margin-top:0;">완료표시 복구</button>
+          <button id="wf-hiworks-sync-btn" class="btn" style="margin-top:0;">하이웍스 동기화</button>
+          <button id="wf-download-btn" class="btn" style="margin-top:0;">엑셀저장</button>
+        </div>
+      </div>
+      <div id="wf-hiworks-status" class="status-msg"></div>
+      <div id="wf-hiworks-result" style="font-size:12px;"></div>
+      <div id="wf-status" class="status-msg"></div>
+
+      <div id="wf-panel-leave" class="wf-panel"></div>
+      <div id="wf-panel-points" class="wf-panel" style="display:none"></div>
+    `,
+
+    "agency-commission": () => `
+      <h2>대리점 수수료 정산</h2>
+      <p class="desc">
+        대리점별 정산 원장("2026" 시트 기준)을 관리합니다. 데이터는 이 브라우저에만 저장되며,
+        필요할 때 같은 구성의 엑셀 파일로 다운로드할 수 있습니다. 월별 금액은 2026년 1월~6월만
+        관리합니다. "이월금"/"총지급금액" 행과 빈 구분 행은 원본과 동일하게 유지되며(각각 노란색/
+        파란색으로 표시), 금액 칸의 "미납", "해지" 같은 메모도 원본 그대로 텍스트로 보존됩니다.
+      </p>
+
+      <div class="card">
+        <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+          <button id="ac-download-btn" class="btn" style="margin-top:0;">엑셀로 다운로드</button>
+        </div>
+
+        <div id="ac-dropzone" class="dropzone" style="margin-top:16px; padding:20px;">
+          📄 최신 원본 엑셀(xls/xlsx)을 여기로 드래그하거나 클릭해서 업로드하면 현재 데이터를 덮어씁니다
+          <input type="file" id="ac-file-input" accept=".xls,.xlsx" style="display:none">
+        </div>
+        <div id="ac-status" class="status-msg"></div>
+      </div>
+
+      <div id="ac-table-container" class="wf-panel"></div>
+    `,
+
+    "giro-draft": () => `
+      <h2>지로청구서 자동기안</h2>
+      <p class="desc">
+        biz.giro.or.kr에서 일반지로요금·전기요금/수신료·KT통신요금 항목을 날짜별로 자동 기안 등록합니다.
+        로그인 세션을 직접 다루는 작업이라 이 브라우저 페이지 자체에서는 실행할 수 없지만, PC에 켜둔
+        작은 로컬 도우미 프로그램을 통해 아래에서 날짜 선택 후 버튼 클릭만으로 실행할 수 있습니다.
+      </p>
+
+      <div class="card">
+        <h3>기안 대상 확인</h3>
+        <p class="desc" style="margin-top:0;">
+          휴일 등으로 납부일이 밀리는 경우가 있어 날짜를 직접 골라 언제든 확인할 수 있습니다
+          (기본은 오늘 날짜 기준으로 자동 선택됩니다).
+        </p>
+        <label style="font-size:13px; color:var(--text-dim);">
+          확인할 날짜
+          <select id="gd-date-select" style="margin-left:6px; padding:4px 8px; border:1px solid var(--border); border-radius:4px; font-size:13px;">
+            <option value="auto">자동 (오늘 날짜)</option>
+            <option value="10일">10일자</option>
+            <option value="20일">20일자</option>
+            <option value="25일">25일자</option>
+            <option value="말일">말일자</option>
+          </select>
+        </label>
+        <div id="gd-status" class="status-msg"></div>
+        <div id="gd-result" style="margin-top:8px;"></div>
+
+        <div style="margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
+          <button id="gd-run-btn" class="btn" style="margin-top:0;">자동 기안 시작</button>
+          <div id="gd-helper-status" class="status-msg" style="margin-top:8px;"></div>
+          <div id="gd-run-status" class="status-msg"></div>
+          <div id="gd-abort-warning" style="display:none; margin-top:8px; padding:12px 16px; background:#7f1d1d; border-radius:6px; color:#fff; font-size:13px; font-weight:600;"></div>
+          <pre id="gd-run-log" style="display:none; margin-top:8px; max-height:220px; overflow-y:auto; background:#0f172a; color:#e2e8f0; padding:12px 16px; border-radius:6px; font-size:12px; white-space:pre-wrap;"></pre>
+          <div id="gd-unregistered" style="display:none; margin-top:12px; padding:12px 16px; background:#fef2f2; border:1px solid #fecaca; border-radius:6px;">
+            <p style="margin:0 0 8px; font-size:13px; font-weight:600; color:#991b1b;">미등록 건이 있습니다</p>
+            <div id="gd-unregistered-list" style="font-size:13px; color:#7f1d1d;"></div>
+            <button id="gd-retry-btn" class="btn" style="margin-top:10px;">미등록 건만 다시 등록</button>
+          </div>
+        </div>
+
+        <details style="margin-top:16px;">
+          <summary style="cursor:pointer; color:var(--text-dim); font-size:13px;">
+            엑셀에 수정사항이 있으면 여기서 다시 업로드
+          </summary>
+          <div id="gd-dropzone" class="dropzone" style="margin-top:12px; padding:20px;">
+            📄 지로납부번호.xlsx 파일을 여기로 드래그하거나 클릭해서 업로드하면 저장된 내용을 갱신합니다
+            <input type="file" id="gd-file-input" accept=".xlsx" style="display:none">
+          </div>
+          <div id="gd-meta" class="status-msg"></div>
+        </details>
+      </div>
+    `,
+  };
+
+  // 섹션이 렌더된 뒤 추가 초기화가 필요한 경우 여기에 등록
+  const sectionInit = {
+    mail: (root) => window.HilineMailInboxTool.init(root),
+    "tax-invoice": (root) => window.HilineTaxInvoiceTool.init(root),
+    welfare: (root) => window.HilineWelfareTool.init(root),
+    "agency-commission": (root) => window.HilineAgencyCommissionTool.init(root),
+    "giro-draft": (root) => window.HilineGiroDraftTool.init(root),
+  };
+
+  const menuListEl = document.getElementById("menu-list");
+  const contentEl = document.getElementById("content");
+
+  // 좌측 메뉴 접기/펼치기 — 화면을 넓게 쓰고 싶을 때 토글, 선택 상태는 localStorage에 저장해
+  // 다음에 열 때도 그대로 유지된다.
+  const sidebarEl = document.getElementById("sidebar");
+  const sidebarToggleBtn = document.getElementById("sidebar-toggle");
+  const SIDEBAR_COLLAPSED_KEY = "hiline_sidebar_collapsed";
+  function applySidebarState(collapsed) {
+    sidebarEl.classList.toggle("collapsed", collapsed);
+    sidebarToggleBtn.textContent = collapsed ? "›" : "‹";
+    sidebarToggleBtn.title = collapsed ? "메뉴 펼치기" : "메뉴 접기";
+  }
+  applySidebarState(localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1");
+  sidebarToggleBtn.addEventListener("click", () => {
+    const collapsed = !sidebarEl.classList.contains("collapsed");
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0");
+    applySidebarState(collapsed);
+  });
+
+  // 표가 넓은 섹션은 main의 900px 폭 제한을 풀어 화면을 최대한 활용한다
+  const wideSections = ["welfare", "agency-commission"];
+
+  function render(id) {
+    contentEl.innerHTML = sections[id] ? sections[id]() : sections.home();
+    contentEl.classList.toggle("wide-content", wideSections.includes(id));
+    document.querySelectorAll("#menu-list li").forEach(li => {
+      li.classList.toggle("active", li.dataset.id === id);
+    });
+    if (sectionInit[id]) sectionInit[id](contentEl);
+  }
+
+  menuItems.forEach(item => {
+    const li = document.createElement("li");
+    li.className = "menu-item";
+    li.dataset.id = item.id;
+    li.textContent = item.label;
+    li.addEventListener("click", () => render(item.id));
+    menuListEl.appendChild(li);
+  });
+
+  render("welfare");
+</script>
+
+</body>
+</html>

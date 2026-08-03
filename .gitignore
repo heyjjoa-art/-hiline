@@ -1,0 +1,13 @@
+node_modules/
+*.log
+server-log.txt
+
+# credentials - do not commit, copy from *.example.json instead
+tools/helper-server/giro-config.json
+tools/helper-server/mail-config.json
+
+# local browser profiles (session data)
+tools/helper-server/chrome-profile-*/
+
+# debug artifacts
+tools/helper-server/debug-fail-row46.png

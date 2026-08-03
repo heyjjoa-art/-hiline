@@ -1,0 +1,14 @@
+{
+  "name": "hiline-helper-server",
+  "version": "1.0.0",
+  "private": true,
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "imapflow": "^1.0.191",
+    "playwright": "^1.61.1"
+  }
+}
