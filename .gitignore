@@ -11,3 +11,10 @@ tools/helper-server/chrome-profile-*/
 
 # debug artifacts
 tools/helper-server/debug-fail-row46.png
+
+# 실제 업무 원본 데이터 (거래처 사업자번호/대표자명/주소/이메일, 주민번호 발행건 포함).
+# 이 저장소는 공개(public)라 월별 실데이터는 올리지 않는다 — 로컬 etc/ 폴더에만 둔다.
+etc/국세청파일*
+etc/하이웍스파일*
+etc/회계사랑파일*
+etc/*.files/

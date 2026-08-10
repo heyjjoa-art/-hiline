@@ -798,6 +798,18 @@
   // 복지포인트 내역 시트 색상 — 인덱스 페이지의 wf-points-green/wf-points-sky와 동일한 색
   const POINTS_GREEN_FILL = LEAVE_GREEN_FILL; // #d8e4bc, 인덱스와 동일 색
   const POINTS_SKY_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFCFE8F5" } };
+  // 인덱스 페이지 completionCell의 "올해 해당" 노란색(#fef3c7)과 동일한 색
+  const POINTS_YEAR_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF3C7" } };
+
+  // 인덱스 페이지의 completionCell과 같은 규칙: 값이 "완료"로 끝나면 회색, 완료가 아니면서
+  // 값에 올해 연도(currentYear)가 들어있으면 노란색, 둘 다 아니면 무색.
+  function pointsMilestoneFill(value) {
+    const v = (value || "").trim();
+    if (!v) return null;
+    if (/완료$/.test(v)) return LEAVE_GRAY_FILL;
+    if (v.includes(String(currentYear))) return POINTS_YEAR_FILL;
+    return null;
+  }
 
   // 인덱스 페이지의 mergeTeamRowspan/fakeTeamMerge와 같은 목적 — 팀명이 연속으로 같은
   // 데이터 행은 엑셀에서도 한 칸으로 병합한다(1열 = 팀명). 퇴사자는 팀이 같아도 재직자와
@@ -1009,12 +1021,16 @@
   // 분홍, 지급포인트~잔여한도는 초록 "복지포인트" 그룹, 장기근속~부모님검진은 하늘색
   // "개인별복지사항" 그룹). 사용내역은 인덱스 화면처럼 "N건 (합계 W원)" 요약만 적고, 건별
   // 상세(금액/내역/지급일)는 필요 없다는 요청에 따라 시트에는 담지 않는다.
+  // 헤더는 3행짜리다: "복지포인트"/"개인별복지사항" 그룹 제목이 1~2행을 통째로 병합해서
+  // 차지하고(요청에 따라 제목 칸을 1행짜리에서 2행짜리로 확장), 지급포인트~부모님검진 개별
+  // 열 이름은 3행에 별도로 적는다. 팀명~근속연수는 열 이름이 따로 없어서 1~3행을 통째로 병합한다.
   function addPointsSheet(wb, pointsData) {
     const ws = wb.addWorksheet("복지포인트 내역");
     const TOTAL_COLS = 12;
 
-    // 팀명~근속연수는 세로로 2행 병합되므로(엑셀 병합 셀은 값이 맨 위 칸에 있어야 표시된다)
-    // 값을 groupRow(1행)에 적는다. "복지포인트"/"개인별복지사항"은 가로로 병합된 그룹 제목.
+    // 팀명~근속연수는 세로로 3행 병합되므로(엑셀 병합 셀은 값이 맨 위 칸에 있어야 표시된다)
+    // 값을 groupRow(1행)에 적는다. "복지포인트"/"개인별복지사항"은 가로+세로(1~2행)로 병합된
+    // 그룹 제목.
     const groupRow = ws.addRow([]);
     groupRow.getCell(1).value = "팀명";
     groupRow.getCell(2).value = "성명";
@@ -1023,37 +1039,80 @@
     groupRow.getCell(5).value = "근속 연수";
     groupRow.getCell(6).value = "복지포인트";
     groupRow.getCell(9).value = "개인별복지사항";
-    ws.mergeCells(1, 1, 2, 1);
-    ws.mergeCells(1, 2, 2, 2);
-    ws.mergeCells(1, 3, 2, 3);
-    ws.mergeCells(1, 4, 2, 4);
-    ws.mergeCells(1, 5, 2, 5);
-    ws.mergeCells(1, 6, 1, 8);
-    ws.mergeCells(1, 9, 1, 12);
+
+    // 그룹 제목이 1~2행을 차지하는 동안 팀명~근속연수 칸도 같이 채워야 하는 빈 자리 행
+    const spacerRow = ws.addRow([]);
+
+    const labelRow = ws.addRow([]);
+    labelRow.getCell(6).value = "지급포인트";
+    labelRow.getCell(7).value = "사용내역";
+    labelRow.getCell(8).value = "잔여한도";
+    labelRow.getCell(9).value = "장기근속(5주년)";
+    labelRow.getCell(10).value = "장기근속(10주년)";
+    labelRow.getCell(11).value = "41세검진";
+    labelRow.getCell(12).value = "부모님검진";
+
+    ws.mergeCells(1, 1, 3, 1);
+    ws.mergeCells(1, 2, 3, 2);
+    ws.mergeCells(1, 3, 3, 3);
+    ws.mergeCells(1, 4, 3, 4);
+    ws.mergeCells(1, 5, 3, 5);
+    ws.mergeCells(1, 6, 2, 8);
+    ws.mergeCells(1, 9, 2, 12);
+
     styleLeaveHeaderRange(groupRow, 1, 5, LEAVE_PINK_FILL);
     styleLeaveHeaderRange(groupRow, 6, 8, POINTS_GREEN_FILL);
     styleLeaveHeaderRange(groupRow, 9, 12, POINTS_SKY_FILL);
+    // 아래 두 행도 병합된 칸이라 안 보이지만 테두리/채우기를 맞춰둔다
+    styleLeaveHeaderRange(spacerRow, 1, 5, LEAVE_PINK_FILL);
+    styleLeaveHeaderRange(spacerRow, 6, 8, POINTS_GREEN_FILL);
+    styleLeaveHeaderRange(spacerRow, 9, 12, POINTS_SKY_FILL);
+    styleLeaveHeaderRange(labelRow, 1, 5, LEAVE_PINK_FILL);
+    styleLeaveHeaderRange(labelRow, 6, 8, POINTS_GREEN_FILL);
+    styleLeaveHeaderRange(labelRow, 9, 12, POINTS_SKY_FILL);
+    [groupRow, spacerRow, labelRow].forEach((row) => { row.height = 20; });
 
-    const subRow = ws.addRow([]);
-    subRow.getCell(6).value = "지급포인트";
-    subRow.getCell(7).value = "사용내역";
-    subRow.getCell(8).value = "잔여한도";
-    subRow.getCell(9).value = "장기근속(5주년)";
-    subRow.getCell(10).value = "장기근속(10주년)";
-    subRow.getCell(11).value = "41세검진";
-    subRow.getCell(12).value = "부모님검진";
-    styleLeaveHeaderRange(subRow, 1, 5, LEAVE_PINK_FILL); // 병합된 칸이라 안 보이지만 테두리/채우기를 맞춰둔다
-    styleLeaveHeaderRange(subRow, 6, 8, POINTS_GREEN_FILL);
-    styleLeaveHeaderRange(subRow, 9, 12, POINTS_SKY_FILL);
-    [groupRow, subRow].forEach((row) => { row.height = 20; });
-
-    const dataRows = pointsData.map((rec) => writeDataRow(ws, [
-      rec.team, rec.name, rec.position, rec.hireDate, rec.tenure,
-      rec.grantPoint || "", pointsSummaryText(rec), rec.remainingLimit || "",
-      rec.longService5 || "", rec.longService10 || "", rec.checkup41 || "", rec.parentCheckup || "",
-    ]));
+    const dataRows = pointsData.map((rec) => {
+      const row = writeDataRow(ws, [
+        rec.team, rec.name, rec.position, rec.hireDate, rec.tenure,
+        rec.grantPoint || "", pointsSummaryText(rec), rec.remainingLimit || "",
+        rec.longService5 || "", rec.longService10 || "", rec.checkup41 || "", rec.parentCheckup || "",
+      ]);
+      // 지급포인트/잔여한도는 금액이라 천단위 콤마 + 우정렬로 보이게 한다(다른 칸은 writeDataRow의
+      // 기본 가운데 정렬을 그대로 따름).
+      [6, 8].forEach((col) => {
+        const cell = row.getCell(col);
+        cell.numFmt = '#,##0"원"';
+        cell.alignment = { vertical: "middle", horizontal: "right" };
+      });
+      // 장기근속/검진 완료 칸은 인덱스 페이지(completionCell)와 동일하게 완료=회색, 올해
+      // 해당=노란색으로 표시한다.
+      [
+        [9, rec.longService5],
+        [10, rec.longService10],
+        [11, rec.checkup41],
+        [12, rec.parentCheckup],
+      ].forEach(([col, value]) => {
+        const fill = pointsMilestoneFill(value);
+        if (fill) row.getCell(col).fill = fill;
+      });
+      return row;
+    });
     mergeConsecutiveTeamCells(ws, dataRows, pointsData, (r) => (r.team || "").trim(), (r) => isResignedName(r.name));
-    setColumnWidths(ws, TOTAL_COLS, (i) => (i < 5 ? 12 : i === 6 ? 20 : 14));
+    // 텍스트가 잘리지 않도록 칸 내용 길이에 맞춰 폭을 넉넉히 잡는다(지급포인트/잔여한도는 콤마+"원"이
+    // 붙어 길어지고, 사용내역은 "N건 (합계 W원)" 요약문이, 장기근속 헤더는 "장기근속(10주년)"처럼
+    // 긴 한글 라벨이 들어간다).
+    setColumnWidths(ws, TOTAL_COLS, (i) => {
+      const col = i + 1;
+      if (col === 1) return 12; // 팀명
+      if (col === 2 || col === 3) return 8; // 성명/직급
+      if (col === 4) return 10; // 입사일
+      if (col === 5) return 8; // 근속 연수
+      if (col === 6 || col === 8) return 16; // 지급포인트/잔여한도 (콤마+"원")
+      if (col === 7) return 26; // 사용내역 ("N건 (합계 W원)")
+      if (col === 9 || col === 10) return 18; // 장기근속(5주년)/장기근속(10주년)
+      return 13; // 41세검진/부모님검진
+    });
   }
 
   async function buildWorkbook(d) {

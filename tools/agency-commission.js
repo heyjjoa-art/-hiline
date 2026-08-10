@@ -49,24 +49,83 @@
     { key: "m12", label: "2026.12월", srcCol: 29 },
   ];
 
+  // 화면 표에는 대리점명/고객번호/계약번호/상호와 월별 금액만 항상 보여주고, 나머지(비고/일자/
+  // 계약종료/수익금액/매출액/月정산액)는 행마다 "상세" 토글로 접어둔다 — 컬럼이 24개나 돼서
+  // 좁은 칸에 글씨가 잘려 보이는 문제(사용자 피드백)를 컬럼 수 자체를 줄여서 해결.
+  // 엑셀 다운로드/업로드(COLUMNS 순서·전체 필드)는 그대로 유지, 화면 표시 방식만 바뀐다.
+  const MAIN_KEYS = [
+    "dealer", "customerNo", "contractNo", "company",
+    "m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8", "m9", "m10", "m11", "m12",
+  ];
+  const MAIN_COLUMNS = MAIN_KEYS.map((k) => COLUMNS.find((c) => c.key === k));
+  const DETAIL_COLUMNS = COLUMNS.filter((c) => !MAIN_KEYS.includes(c.key));
+  const MAIN_COLUMN_WIDTH = {
+    dealer: 100, customerNo: 120, contractNo: 100, company: 170,
+    m1: 78, m2: 78, m3: 78, m4: 78, m5: 78, m6: 78, m7: 78, m8: 78, m9: 78, m10: 78, m11: 78, m12: 78,
+  };
+
+  // 전체 계약이 종료된 상호는 불러올 때 자동으로 "종료" 표시(rec.closed=true)해서 회색 처리 +
+  // HIMS 동기화 대상에서 제외한다(2026-08-04 사용자 요청). 나머지 행(예: 일부 계약만 종료된 경우)은
+  // 화면의 "종료" 체크박스로 직접 표시하면 된다. rec.closed는 엑셀 컬럼(COLUMNS)에 없는 이 도구
+  // 전용 표시라 엑셀 다운로드/업로드에는 반영되지 않는다 — 파일을 다시 업로드하면 아래 목록에 없는
+  // 회사의 수동 "종료" 표시는 초기화되니 참고.
+  const CLOSED_COMPANIES = ["바시스", "동서한방병원", "아이티센씨티에스", "인탑", "스냅컴퍼니"];
+
+  function applyClosedDefaults(records) {
+    records.forEach((rec) => {
+      if (rec.closed === undefined) rec.closed = CLOSED_COMPANIES.includes((rec.company || "").trim());
+    });
+  }
+
   let data = [];
+
+  // "상태" 필터(유지/전체/종료) — 화면 표만 걸러 보여주고 data 자체는 건드리지 않는다. 기본값은
+  // "유지"(종료 처리된 행은 평소엔 숨김) — rowEls는 renderTable이 만든 각 행(rec/tr/detailTr)을
+  // 필터 재적용 때 다시 순회하기 위한 참조.
+  let currentFilter = "active";
+  let rowEls = [];
+
+  function matchesFilter(rec) {
+    if (currentFilter === "active") return !rec.closed;
+    if (currentFilter === "closed") return !!rec.closed;
+    return true;
+  }
+
+  function applyFilter() {
+    rowEls.forEach(({ rec, tr, detailTr }) => {
+      const show = matchesFilter(rec);
+      tr.style.display = show ? "" : "none";
+      if (detailTr) detailTr.style.display = show && tr.dataset.detailOpen === "1" ? "" : "none";
+    });
+  }
 
   // ── 공용 유틸 ───────────────────────────────────────────
   function newId() {
     return crypto.randomUUID ? crypto.randomUUID() : "id-" + Date.now() + "-" + Math.random().toString(36).slice(2);
   }
 
-  function blankRecord() {
-    const r = { _id: newId() };
+  // kind: "normal"을 넘기면 값이 하나도 없어도 rowType()이 "비고"(blank)가 아니라 "normal"(계약행)로
+  // 판정하도록 _rowKind 표시를 붙인다. 새 계약행을 만들 때 쓰고, 비고행을 만들 때는 생략한다.
+  function blankRecord(kind) {
+    const r = { _id: newId(), closed: false };
     COLUMNS.forEach((c) => { r[c.key] = ""; });
+    if (kind === "normal") r._rowKind = "normal";
     return r;
   }
 
+  // "blank" 판정에서 note(비고)와 dealer(대리점, 세로 병합 때문에 빈 행에도 값이 써질 수 있음)는
+  // 제외한다 — 총지급금액 다음 빈 행에 비고를 채우거나 대리점명이 병합돼 들어가도 여전히
+  // "blank"로 취급되어야 블록 경계/스타일링(이월금·총지급금액과 함께 종료 표시 등)이 깨지지 않는다.
+  // _rowKind: "normal"은 "+ 계약" 등으로 방금 추가돼 아직 아무 값도 안 채워진 새 계약행을 위한
+  // 명시적 표시(2026-08-05) — 값만으로 타입을 추론하면 빈 계약행이 "비고"(blank)로 오분류돼
+  // 화면에 "비고"로 보이고, HIMS 동기화 쪽 블록 경계까지 잘못 끊기는 문제가 있었음. COLUMNS(엑셀
+  // 컬럼)에 없는 이 도구 전용 표시라 다운로드/재업로드 시엔 사라짐(closed와 같은 패턴).
   function rowType(rec) {
     const c = (rec.customerNo || "").trim();
     if (c.includes("이월금")) return "carry";
     if (c.includes("총지급금액")) return "total";
-    const allBlank = COLUMNS.every((col) => !(rec[col.key] || "").toString().trim());
+    if (rec._rowKind === "normal") return "normal";
+    const allBlank = COLUMNS.every((col) => col.key === "note" || col.key === "dealer" || !(rec[col.key] || "").toString().trim());
     return allBlank ? "blank" : "normal";
   }
 
@@ -78,6 +137,7 @@
       console.error(e);
       data = [];
     }
+    applyClosedDefaults(data);
   }
 
   function save() {
@@ -184,38 +244,318 @@
   }
 
   // ── DOM 렌더링 ──────────────────────────────────────────
-  function applyUnpaidStyle(input, value) {
-    input.classList.toggle("ac-unpaid", /^미납\//.test((value || "").trim()));
+  // 미납("미납/금액")은 빨간 폰트, 미납금을 늦게 납부한 경우("6.30/금액" — HIMS 동기화의 이월금
+  // 케이스와 같은 형식)는 노란 셀로 구분 표시한다.
+  const LATE_PAID_RE = /^\d{1,2}\.\d{1,2}\/.+/;
+  function applyCellStatusStyle(input, value) {
+    const v = (value || "").trim();
+    input.classList.toggle("ac-unpaid", /^미납\//.test(v));
+    input.classList.toggle("ac-late-paid", LATE_PAID_RE.test(v));
   }
 
-  function cellInput(rec, col) {
-    const td = document.createElement("td");
+  function buildFieldInput(rec, col, onChange) {
     const input = document.createElement(col.multiline ? "textarea" : "input");
     if (!col.multiline) input.type = "text";
     else { input.rows = 2; }
     input.value = rec[col.key] || "";
-    applyUnpaidStyle(input, input.value);
+    input.title = input.value;
+    applyCellStatusStyle(input, input.value);
     input.addEventListener("change", () => {
       rec[col.key] = input.value.trim();
-      applyUnpaidStyle(input, rec[col.key]);
+      input.title = rec[col.key];
+      applyCellStatusStyle(input, rec[col.key]);
       save();
-      applyRowType(td.parentElement, rec);
+      if (onChange) onChange();
     });
-    td.appendChild(input);
+    return input;
+  }
+
+  function cellInput(rec, col, onChange) {
+    const td = document.createElement("td");
+    td.appendChild(buildFieldInput(rec, col, onChange));
     return td;
   }
 
-  function applyRowType(tr, rec) {
-    tr.classList.remove("ac-row-carry", "ac-row-total", "ac-row-blank");
+  function applyRowType(tr, detailTr, rec) {
+    [tr, detailTr].forEach((el) => {
+      if (!el) return;
+      el.classList.remove("ac-row-carry", "ac-row-total", "ac-row-blank");
+    });
     const type = rowType(rec);
-    if (type === "carry") tr.classList.add("ac-row-carry");
-    if (type === "total") tr.classList.add("ac-row-total");
-    if (type === "blank") tr.classList.add("ac-row-blank");
+    if (type === "carry" || type === "total" || type === "blank") {
+      const cls = "ac-row-" + type;
+      tr.classList.add(cls);
+      if (detailTr) detailTr.classList.add(cls);
+    }
+    [tr, detailTr].forEach((el) => {
+      if (!el) return;
+      el.classList.toggle("ac-row-closed", !!rec.closed);
+    });
   }
 
-  function appendRow(tbody, rec) {
+  // 이월금/총지급금액/빈 행에는 "종료" 체크박스가 없지만(정상 고객행에만 있음), 한 블록의 정상행이
+  // 전부 종료되면(대리점 전체 종료) 그 블록의 이월금/총지급금액/빈 행도 같이 회색 처리한다
+  // (사용자 요청, 2026-08-04). 블록 구성은 hims-match.js의 buildBlocks와 동일한 규칙(정상행들 →
+  // 이월금 → 총지급금액 → 빈행)을 따른다.
+  function buildBlocksForStyling(records) {
+    const blocks = [];
+    let pending = [];
+    let lastBlock = null;
+    records.forEach((rec, i) => {
+      const t = rowType(rec);
+      if (t === "normal") {
+        pending.push(i);
+        lastBlock = null;
+      } else if (t === "carry") {
+        const block = { carryIndex: i, totalIndex: null, blankIndex: null, normalIndices: pending };
+        blocks.push(block);
+        lastBlock = block;
+        pending = [];
+      } else if (t === "total") {
+        if (lastBlock && lastBlock.totalIndex == null) lastBlock.totalIndex = i;
+        pending = [];
+      } else {
+        if (lastBlock && lastBlock.blankIndex == null) lastBlock.blankIndex = i;
+        pending = [];
+        lastBlock = null;
+      }
+    });
+    return blocks;
+  }
+
+  // 대리점 칸 세로 병합 정보: 블록(정상행들→이월금→총지급금액→비고행, buildBlocksForStyling과 동일
+  // 경계) 단위로 먼저 나누고, 그 블록 안의 정상행들을 다시 "대리점명이 실제로 바뀌는 지점" 기준
+  // 서브 구간으로 쪼갠다. 이월금/총지급금액/비고 행은 그 블록의 마지막 서브 구간에만 붙인다.
+  // - 블록 경계를 절대 넘지 않으므로, 예를 들어 에이치플러스 양지 블록처럼 대리점명이 아예 없는
+  //   블록도 그 블록 자기 범위(정상행~비고)만큼만 "빈 대리점" 한 칸으로 병합되고, 절대 이전
+  //   블록(예: 삼일제약)의 rowspan에 잘못 이어붙지 않는다(2026-08-04 실사용 스크린샷에서 발견 —
+  //   이전 버전은 블록 경계를 무시한 채 "정상행에 새 대리점명이 있을 때만" 런을 끊어서, 다음 블록의
+  //   첫 행이 대리점명 없이 시작하면 이전 블록 rowspan에 흡수돼 대리점 칸이 아예 안 그려지고 그
+  //   행 전체가 한 칸씩 밀려 보이는 버그가 있었음).
+  // - 한 블록 안에 서로 다른 대리점(예: 박천홍 팀장/이일웅 본부장)이 섞여 있으면 대리점명이 바뀌는
+  //   지점에서 서브 구간이 나뉘고, 마지막 서브 구간(가장 최근 대리점)만 그 블록의
+  //   이월금/총지급금액/비고 행을 포함한다.
+  function computeDealerMergeInfo(records) {
+    const blocks = buildBlocksForStyling(records);
+    const skip = new Set();
+    const spanStart = new Map();
+
+    blocks.forEach((b) => {
+      const tailIndices = [];
+      if (b.carryIndex != null) tailIndices.push(b.carryIndex);
+      if (b.totalIndex != null) tailIndices.push(b.totalIndex);
+      if (b.blankIndex != null) tailIndices.push(b.blankIndex);
+
+      const subSpans = [];
+      let current = null;
+      b.normalIndices.forEach((idx) => {
+        const ownDealer = (records[idx].dealer || "").trim();
+        if (!current || (ownDealer && ownDealer !== current.value)) {
+          current = { value: ownDealer, indices: [idx] };
+          subSpans.push(current);
+        } else {
+          current.indices.push(idx);
+        }
+      });
+
+      if (tailIndices.length > 0) {
+        if (subSpans.length > 0) {
+          subSpans[subSpans.length - 1].indices.push(...tailIndices);
+        } else {
+          subSpans.push({ value: "", indices: tailIndices.slice() });
+        }
+      }
+
+      subSpans.forEach((span) => {
+        const minIdx = Math.min(...span.indices);
+        spanStart.set(minIdx, { rowSpan: span.indices.length, value: span.value, memberIndices: span.indices.slice() });
+        span.indices.forEach((idx) => { if (idx !== minIdx) skip.add(idx); });
+      });
+    });
+
+    return { spanStart, skip };
+  }
+
+  // 총지급금액 행은 있는데 그 블록에 비고(빈) 행이 없는 경우의 totalIndex 집합 — "+ 비고 행 추가"
+  // 버튼을 보여줄지 판단하는 데 쓴다(이런 블록은 대리점 세로 병합이 총지급금액에서 끊긴 채로 보임).
+  function computeMissingBlankTotals(records) {
+    const blocks = buildBlocksForStyling(records);
+    const set = new Set();
+    blocks.forEach((b) => {
+      if (b.totalIndex != null && b.blankIndex == null) set.add(b.totalIndex);
+    });
+    return set;
+  }
+
+  function applyBlockClosedStyling() {
+    const records = rowEls.map((e) => e.rec);
+    const blocks = buildBlocksForStyling(records);
+    const closedIdx = new Set();
+    blocks.forEach((b) => {
+      const allClosed = b.normalIndices.length > 0 && b.normalIndices.every((idx) => !!records[idx].closed);
+      if (!allClosed) return;
+      [b.carryIndex, b.totalIndex, b.blankIndex].forEach((idx) => { if (idx != null) closedIdx.add(idx); });
+    });
+    rowEls.forEach(({ rec, tr, detailTr }, i) => {
+      if (rowType(rec) === "normal") return; // 정상행 자체의 종료 표시는 applyRowType이 따로 관리
+      const shouldClose = closedIdx.has(i);
+      tr.classList.toggle("ac-row-closed", shouldClose);
+      if (detailTr) detailTr.classList.toggle("ac-row-closed", shouldClose);
+    });
+  }
+
+  // 접혀있는 "상세" 정보(비고/일자/계약종료/수익금액/매출액/月정산액)를 행 아래에 라벨+입력칸
+  // 그리드로 펼쳐 보여준다. 토글 열림/닫힘은 appendRow에서 관리.
+  function buildDetailRow(rec, onChange, colSpan) {
     const tr = document.createElement("tr");
-    COLUMNS.forEach((col) => tr.appendChild(cellInput(rec, col)));
+    tr.className = "ac-detail-row";
+    tr.style.display = "none";
+
+    const td = document.createElement("td");
+    td.colSpan = colSpan;
+    const grid = document.createElement("div");
+    grid.className = "ac-detail-grid";
+    DETAIL_COLUMNS.forEach((col) => {
+      const field = document.createElement("label");
+      field.className = "ac-detail-field";
+      if (col.multiline) field.classList.add("ac-detail-field-wide");
+      const label = document.createElement("span");
+      label.className = "ac-detail-label";
+      label.textContent = col.label.replace(/\n/g, " ");
+      field.appendChild(label);
+      field.appendChild(buildFieldInput(rec, col, onChange));
+      grid.appendChild(field);
+    });
+    td.appendChild(grid);
+    tr.appendChild(td);
+    return tr;
+  }
+
+  function appendRow(tbody, rec, index, dealerMergeInfo, moveRow, insertBlankAfter, missingBlankTotals) {
+    dealerMergeInfo = dealerMergeInfo || { spanStart: new Map(), skip: new Set() };
+    const tr = document.createElement("tr");
+    const type = rowType(rec);
+    // "종료" 체크박스/"상세" 토글은 실제 고객 행(고객번호가 있는 normal 행)에만 의미가 있어서,
+    // 이월금/총지급금액/빈 행에는 아예 넣지 않는다(사용자 요청, 2026-08-04).
+    const isNormal = type === "normal";
+    const isBlank = type === "blank";
+    let detailTr = null; // normal 행만 buildDetailRow가 아래에서 채워줌 — 클로저로 참조
+
+    function handleChange() {
+      applyRowType(tr, detailTr, rec);
+    }
+
+    // 대리점 칸: 한 블록(정상행들~이월금~총지급금액~비고행) 전체를 세로로 병합해서 한 번만 보여준다
+    // (사용자 요청, 2026-08-04 — 계약이 여러 건이어도 대리점명은 통합 표시).
+    if (dealerMergeInfo.skip.has(index)) {
+      // 이 행은 블록 첫 행의 rowspan 안에 포함되므로 대리점 칸을 그리지 않음
+    } else if (dealerMergeInfo.spanStart.has(index)) {
+      const info = dealerMergeInfo.spanStart.get(index);
+      const td = document.createElement("td");
+      td.rowSpan = info.rowSpan;
+      td.className = "ac-dealer-merged";
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = info.value;
+      input.title = info.value;
+      input.addEventListener("change", () => {
+        const v = input.value.trim();
+        info.memberIndices.forEach((idx) => { if (data[idx]) data[idx].dealer = v; });
+        input.title = v;
+        save();
+      });
+      td.appendChild(input);
+      tr.appendChild(td);
+    } else {
+      tr.appendChild(cellInput(rec, MAIN_COLUMNS[0], handleChange));
+    }
+
+    // 나머지 메인 칸(고객번호~월별). 고객번호/계약번호/상호(왼쪽 2~4번째 칸) 3개를 합쳐서:
+    // 빈 행은 "비고", 이월금/총지급금액 행은 그 customerNo 값("이월금"/"총지급금액...")을 3칸에
+    // 걸쳐 텍스트로만 보여준다(비고와 동일하게 입력칸 없이 — 사용자 요청, 2026-08-04). 셋 다
+    // 가운데 정렬. customerNo는 rowType 판정에 쓰이는 값이라 편집칸을 없애 실수로 안 바뀌게 함.
+    if (isBlank) {
+      const mergedTd = document.createElement("td");
+      mergedTd.colSpan = 3;
+      mergedTd.className = "ac-blank-note-td";
+      mergedTd.textContent = "비고";
+      tr.appendChild(mergedTd);
+      MAIN_COLUMNS.slice(4).forEach((col) => tr.appendChild(cellInput(rec, col, handleChange)));
+    } else if (type === "carry" || type === "total") {
+      const mergedTd = document.createElement("td");
+      mergedTd.colSpan = 3;
+      mergedTd.className = "ac-carrytotal-label-td";
+      const label = document.createElement("span");
+      label.textContent = rec.customerNo || "";
+      mergedTd.appendChild(label);
+      // 총지급금액 다음에 비고(빈) 행이 없는 블록은 대리점/비고 병합이 이 행에서 끊긴 채로 보임
+      // (예: 이일웅 본부장, 운현호 건) — 클릭 한 번으로 비고 행을 끼워넣을 수 있게 버튼 제공.
+      if (type === "total" && missingBlankTotals && missingBlankTotals.has(index) && insertBlankAfter) {
+        const addNoteBtn = document.createElement("button");
+        addNoteBtn.type = "button";
+        addNoteBtn.className = "wf-link-btn ac-add-note-btn";
+        addNoteBtn.textContent = "+ 비고 행 추가";
+        addNoteBtn.title = "이 블록에 비고(빈) 행이 없어서 대리점 병합이 여기서 끊깁니다. 클릭하면 바로 아래에 비고 행을 추가합니다.";
+        addNoteBtn.addEventListener("click", () => insertBlankAfter(index));
+        mergedTd.appendChild(addNoteBtn);
+      }
+      tr.appendChild(mergedTd);
+      MAIN_COLUMNS.slice(4).forEach((col) => tr.appendChild(cellInput(rec, col, handleChange)));
+    } else {
+      MAIN_COLUMNS.slice(1).forEach((col) => tr.appendChild(cellInput(rec, col, handleChange)));
+    }
+
+    const closeTd = document.createElement("td");
+    if (isNormal) {
+      const closeLabel = document.createElement("label");
+      closeLabel.className = "ac-close-toggle";
+      const closeCb = document.createElement("input");
+      closeCb.type = "checkbox";
+      closeCb.checked = !!rec.closed;
+      closeCb.title = "체크하면 이 행은 회색 처리되고 다음 HIMS 동기화 대상에서 제외됩니다.";
+      closeCb.addEventListener("change", () => {
+        rec.closed = closeCb.checked;
+        save();
+        applyRowType(tr, detailTr, rec);
+        applyBlockClosedStyling();
+        applyFilter();
+      });
+      closeLabel.appendChild(closeCb);
+      closeLabel.appendChild(document.createTextNode("종료"));
+      closeTd.appendChild(closeLabel);
+    }
+    tr.appendChild(closeTd);
+
+    const toggleTd = document.createElement("td");
+    let toggleBtn = null;
+    if (isNormal) {
+      toggleBtn = document.createElement("button");
+      toggleBtn.type = "button";
+      toggleBtn.className = "wf-link-btn ac-toggle-btn";
+      toggleBtn.textContent = "상세 ▾";
+      toggleTd.appendChild(toggleBtn);
+    }
+    tr.appendChild(toggleTd);
+
+    const moveTd = document.createElement("td");
+    if (moveRow && index != null) {
+      moveTd.className = "ac-move-cell";
+      const upBtn = document.createElement("button");
+      upBtn.type = "button";
+      upBtn.className = "wf-link-btn ac-move-btn";
+      upBtn.textContent = "▲";
+      upBtn.disabled = index <= 0;
+      upBtn.addEventListener("click", () => moveRow(index, -1));
+      const downBtn = document.createElement("button");
+      downBtn.type = "button";
+      downBtn.className = "wf-link-btn ac-move-btn";
+      downBtn.textContent = "▼";
+      downBtn.disabled = index >= data.length - 1;
+      downBtn.addEventListener("click", () => moveRow(index, 1));
+      moveTd.appendChild(upBtn);
+      moveTd.appendChild(downBtn);
+    }
+    tr.appendChild(moveTd);
 
     const delTd = document.createElement("td");
     const delBtn = document.createElement("button");
@@ -224,59 +564,164 @@
     delBtn.addEventListener("click", () => {
       if (!confirm("이 행을 삭제할까요?")) return;
       data = data.filter((r) => r._id !== rec._id);
+      rowEls = rowEls.filter((e) => e.rec._id !== rec._id);
       tr.remove();
+      if (detailTr) detailTr.remove();
+      applyBlockClosedStyling();
       save();
     });
     delTd.appendChild(delBtn);
     tr.appendChild(delTd);
 
-    applyRowType(tr, rec);
+    if (isNormal) {
+      detailTr = buildDetailRow(rec, handleChange, MAIN_COLUMNS.length + 3);
+      tr.dataset.detailOpen = "0";
+      toggleBtn.addEventListener("click", () => {
+        const isOpen = detailTr.style.display !== "none";
+        const nextOpen = !isOpen;
+        tr.dataset.detailOpen = nextOpen ? "1" : "0";
+        detailTr.style.display = nextOpen ? "" : "none";
+        toggleBtn.textContent = nextOpen ? "상세 ▴" : "상세 ▾";
+      });
+    }
+
+    applyRowType(tr, detailTr, rec);
     tbody.appendChild(tr);
+    if (detailTr) tbody.appendChild(detailTr);
+    rowEls.push({ rec, tr, detailTr });
   }
 
   function renderTable(container) {
     container.innerHTML = "";
+    rowEls = [];
     const table = document.createElement("table");
     table.className = "wf-table ac-table";
+
+    const colgroup = document.createElement("colgroup");
+    MAIN_COLUMNS.forEach((col) => {
+      const c = document.createElement("col");
+      c.style.width = (MAIN_COLUMN_WIDTH[col.key] || 78) + "px";
+      colgroup.appendChild(c);
+    });
+    const closeCol = document.createElement("col");
+    closeCol.style.width = "52px";
+    colgroup.appendChild(closeCol);
+    const toggleCol = document.createElement("col");
+    toggleCol.style.width = "56px";
+    colgroup.appendChild(toggleCol);
+    const moveCol = document.createElement("col");
+    moveCol.style.width = "40px";
+    colgroup.appendChild(moveCol);
+    const delCol = document.createElement("col");
+    delCol.style.width = "48px";
+    colgroup.appendChild(delCol);
+    table.appendChild(colgroup);
+
     const thead = document.createElement("thead");
     const headTr = document.createElement("tr");
-    COLUMNS.forEach((col) => {
+    MAIN_COLUMNS.forEach((col) => {
       const th = document.createElement("th");
       th.textContent = col.label;
       headTr.appendChild(th);
     });
+    const closeTh = document.createElement("th");
+    closeTh.textContent = "상태표시";
+    headTr.appendChild(closeTh);
+    const detailTh = document.createElement("th");
+    detailTh.textContent = "상세";
+    headTr.appendChild(detailTh);
+    const moveTh = document.createElement("th");
+    moveTh.textContent = "이동";
+    headTr.appendChild(moveTh);
     headTr.appendChild(document.createElement("th"));
     thead.appendChild(headTr);
     table.appendChild(thead);
 
     const tbody = document.createElement("tbody");
     table.appendChild(tbody);
-    data.forEach((rec) => appendRow(tbody, rec));
+    const dealerMergeInfo = computeDealerMergeInfo(data);
+    const missingBlankTotals = computeMissingBlankTotals(data);
+
+    // 행 순서 바꾸기: data 배열에서 두 행을 맞바꾸고 표 전체를 다시 그린다(대리점 세로 병합 등이
+    // 얽혀있어 DOM을 부분만 손대는 것보다 통째로 다시 그리는 게 안전함).
+    function moveRow(index, delta) {
+      const target = index + delta;
+      if (target < 0 || target >= data.length) return;
+      const tmp = data[index];
+      data[index] = data[target];
+      data[target] = tmp;
+      save();
+      renderTable(container);
+    }
+
+    function insertBlankAfter(index) {
+      data.splice(index + 1, 0, blankRecord());
+      save();
+      renderTable(container);
+    }
+
+    data.forEach((rec, i) => appendRow(tbody, rec, i, dealerMergeInfo, moveRow, insertBlankAfter, missingBlankTotals));
+    applyBlockClosedStyling();
+    applyFilter();
     container.appendChild(table);
 
     const btnRow = document.createElement("div");
     btnRow.style.marginTop = "12px";
 
-    const addBtn = document.createElement("button");
-    addBtn.className = "btn wf-add-btn";
-    addBtn.textContent = "+ 행 추가";
-    addBtn.style.marginRight = "8px";
-    addBtn.addEventListener("click", () => {
-      const rec = blankRecord();
-      data.push(rec);
-      appendRow(tbody, rec);
+    // "대리점 추가": 계약행 2개(대부분 대리점 블록에 계약이 2건 이상이라 기본 2줄로 시작) +
+    // 이월금 + 총지급금액 + 비고행을 한 세트로 새로 만든다. 계약행이 더 필요하면 이 버튼으로
+    // 세트를 하나 더 만든 뒤 "이동" 버튼으로 원하는 블록 안에 끼워 넣으면 됨(대리점 칸의
+    // "+ 계약" 버튼은 2026-08-05 삭제됨).
+    const addDealerBtn = document.createElement("button");
+    addDealerBtn.className = "btn wf-add-btn";
+    addDealerBtn.textContent = "+ 대리점 추가";
+    addDealerBtn.style.marginRight = "8px";
+    addDealerBtn.addEventListener("click", () => {
+      const normalRec1 = blankRecord("normal");
+      const normalRec2 = blankRecord("normal");
+      const carryRec = blankRecord();
+      carryRec.customerNo = "이월금";
+      const totalRec = blankRecord();
+      totalRec.customerNo = "총지급금액";
+      const blankRec = blankRecord();
+      data.push(normalRec1, normalRec2, carryRec, totalRec, blankRec);
       save();
+      renderTable(container);
     });
-    btnRow.appendChild(addBtn);
+    btnRow.appendChild(addDealerBtn);
+
     container.appendChild(btnRow);
   }
 
   // ── 초기화 ──────────────────────────────────────────────
   function init(root) {
     loadFromStorage();
+    currentFilter = "active";
+
+    // 탭(정산요약/매월 수수료/매월 상품권/당월 상품권) — 지금은 "매월 수수료"만 실제 내용이 있고
+    // 나머지 3개는 준비 중 안내만 표시(2026-08-04, welfare-management.js의 탭 패턴과 동일).
+    const tabs = root.querySelectorAll(".wf-tab");
+    const panels = {
+      summary: root.querySelector("#ac-panel-summary"),
+      "monthly-fee": root.querySelector("#ac-panel-monthly-fee"),
+      "monthly-gift": root.querySelector("#ac-panel-monthly-gift"),
+      "current-gift": root.querySelector("#ac-panel-current-gift"),
+    };
+    function showTab(id) {
+      tabs.forEach((t) => t.classList.toggle("active", t.dataset.tab === id));
+      Object.keys(panels).forEach((k) => { panels[k].style.display = k === id ? "" : "none"; });
+    }
+    tabs.forEach((t) => t.addEventListener("click", () => showTab(t.dataset.tab)));
 
     const container = root.querySelector("#ac-table-container");
     renderTable(container);
+
+    const filterSelect = root.querySelector("#ac-filter-select");
+    filterSelect.value = currentFilter;
+    filterSelect.addEventListener("change", () => {
+      currentFilter = filterSelect.value;
+      applyFilter();
+    });
 
     const status = root.querySelector("#ac-status");
     function setStatus(msg, isError) {
@@ -299,6 +744,7 @@
         try {
           const wb = XLSX.read(e.target.result, { type: "array" });
           data = parseWorkbook(wb);
+          applyClosedDefaults(data);
           save();
           renderTable(container);
           setStatus(`업로드 완료 — ${data.length}행 불러왔습니다.`);
@@ -360,16 +806,24 @@
     function renderSyncResult(result) {
       if (!result) { syncResult.innerHTML = ""; return; }
       const parts = [];
-      parts.push(`<p>칸 ${result.cellUpdates.length}건 갱신, 이월금 ${result.carryUpdates.filter((u) => u.value).length}건 반영됨.</p>`);
+      const totalUpdates = result.totalUpdates || [];
+      parts.push(`<p>칸 ${result.cellUpdates.length}건 갱신, 이월금 ${result.carryUpdates.filter((u) => u.value).length}건·` +
+        `총지급금액 ${totalUpdates.filter((u) => u.value).length}건 반영됨.</p>`);
       if (result.notFoundCustomers.length) {
         parts.push(`<p style="color:#b91c1c;">HIMS에서 못 찾은 고객번호(${result.notFoundCustomers.length}건): ${result.notFoundCustomers.join(", ")}</p>`);
       }
       if (result.noContractMatch.length) {
         const items = result.noContractMatch.map((m) => `${m.company || m.customerNo}(${m.contractNo})`).join(", ");
-        parts.push(`<p style="color:#b45309;">2026년 청구건을 못 찾은 계약(계약번호가 바뀌었을 수 있음, ${result.noContractMatch.length}건): ${items}</p>`);
+        parts.push(`<p style="color:#b45309;">고객번호는 찾았지만 7~12월 청구건이 하나도 없는 행(해지됐거나 아직 청구 전일 수 있음, ${result.noContractMatch.length}건): ${items}</p>`);
       }
       if (result.skippedBlocks.length) {
-        parts.push(`<p style="color:#6b7280;">일부 계약을 못 찾아 이월금 계산을 건너뛴 대리점 블록: ${result.skippedBlocks.length}개</p>`);
+        parts.push(`<p style="color:#6b7280;">일부 계약을 못 찾아 이월금·총지급금액 계산을 건너뛴 대리점 블록: ${result.skippedBlocks.length}개</p>`);
+      }
+      if (result.closedBlocks && result.closedBlocks.length) {
+        parts.push(`<p style="color:#6b7280;">전체 종료 처리된 대리점 블록이라 이월금·총지급금액을 건드리지 않음: ${result.closedBlocks.length}개</p>`);
+      }
+      if (result.blocksWithoutTotalRow && result.blocksWithoutTotalRow.length) {
+        parts.push(`<p style="color:#6b7280;">"총지급금액" 행을 찾지 못해 건너뛴 대리점 블록: ${result.blocksWithoutTotalRow.length}개(이월금 행 바로 다음에 총지급금액 행이 있는지 확인해주세요)</p>`);
       }
       syncResult.innerHTML = parts.join("");
     }
@@ -388,7 +842,9 @@
           if (!SYNC_BUSY_STATES.includes(job.state)) {
             stopSyncPolling();
             if (job.state === "done" && job.result) {
-              const applied = applyCellUpdates(job.result.cellUpdates) + applyCellUpdates(job.result.carryUpdates);
+              const applied = applyCellUpdates(job.result.cellUpdates)
+                + applyCellUpdates(job.result.carryUpdates)
+                + applyCellUpdates(job.result.totalUpdates || []);
               save();
               renderTable(container);
               renderSyncResult(job.result);

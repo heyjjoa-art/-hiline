@@ -148,7 +148,7 @@ async function runHimsSync(records, year) {
 
     himsJob.state = 'fetching';
     const custNos = [...new Set(
-      records.filter((r) => rowType(r) === 'normal' && r.customerNo && r.contractNo).map((r) => toHimsCustNo(r.customerNo))
+      records.filter((r) => rowType(r) === 'normal' && r.customerNo && r.contractNo && !r.closed).map((r) => toHimsCustNo(r.customerNo))
     )];
     pushHimsLog(`대상 고객 ${custNos.length}명의 요금납부정보를 조회합니다...`);
 
@@ -170,8 +170,12 @@ async function runHimsSync(records, year) {
     pushHimsLog(
       `계산 완료 — 칸 ${result.cellUpdates.length}건 갱신 대상, 이월금 ${
         result.carryUpdates.filter((u) => u.value).length
+      }건, 총지급금액 ${
+        (result.totalUpdates || []).filter((u) => u.value).length
       }건, 조회 실패 고객 ${result.notFoundCustomers.length}명, 이월금 계산 생략된 블록 ${
         result.skippedBlocks.length
+      }개, 전체 종료돼 건드리지 않은 블록 ${
+        (result.closedBlocks || []).length
       }개, 대상연도 청구건 못 찾은 계약 ${result.noContractMatch.length}건`
     );
 
