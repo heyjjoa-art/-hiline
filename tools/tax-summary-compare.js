@@ -433,14 +433,23 @@
       els.status.style.color = kind === "error" ? "#dc2626" : kind === "ok" ? "#16a34a" : "";
     }
 
-    // 드롭존 하나를 파일 선택/드래그&드롭 양쪽에 연결한다
-    function wireZone(zone, input, which, label) {
+    // 드롭존 하나를 파일 선택/드래그&드롭 양쪽에 연결한다.
+    // 라벨만 갈아끼우고 <input>은 건드리지 않는다(innerHTML로 통째로 갈면 input이 날아간다).
+    const resetZoneFns = [];
+    function wireZone(zone, input, which) {
+      const labelEl = zone.querySelector(".tsc-zone-label");
+      const defaultLabel = labelEl.innerHTML;
       const show = file => {
         files[which] = file;
-        zone.innerHTML = `📄 <strong>${file.name}</strong><br><span style="font-size:12px;">다른 파일로 바꾸려면 다시 클릭하세요</span>`;
+        labelEl.innerHTML = `📄 <strong>${file.name}</strong><br><span style="font-size:12px;">다른 파일로 바꾸려면 다시 클릭하세요</span>`;
         els.downloadBtn.style.display = "none";
         lastResult = null;
       };
+      resetZoneFns.push(() => {
+        files[which] = null;
+        input.value = ""; // 같은 파일을 다시 골라도 change가 뜨도록 비워둔다
+        labelEl.innerHTML = defaultLabel;
+      });
       zone.addEventListener("click", () => input.click());
       input.addEventListener("change", () => { if (input.files[0]) show(input.files[0]); });
       zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("dragover"); });
@@ -450,10 +459,16 @@
         zone.classList.remove("dragover");
         if (e.dataTransfer.files[0]) show(e.dataTransfer.files[0]);
       });
-      zone.dataset.label = label;
     }
-    wireZone(els.hwZone, els.hwInput, "hw", "하이웍스");
-    wireZone(els.ntZone, els.ntInput, "nt", "국세청");
+    wireZone(els.hwZone, els.hwInput, "hw");
+    wireZone(els.ntZone, els.ntInput, "nt");
+
+    // 비교가 끝나면 올린 파일을 화면에서 즉시 놓아준다 — 거래처 정보·주민번호 발행건이 들어있는
+    // 원본이 페이지에 남아있지 않게 하기 위한 것. 결과 표와 비교자료 다운로드는 그대로 쓸 수 있다
+    // (결과는 이미 값으로 뽑아둔 상태라 원본 파일이 없어도 된다).
+    function clearUploadedFiles() {
+      resetZoneFns.forEach(fn => fn());
+    }
 
     function readFile(file) {
       return new Promise((resolve, reject) => {
@@ -490,8 +505,11 @@
         lastResult = compare(hometax, hiworks);
         renderResult(lastResult);
         const n = lastResult.diffs.length;
-        setStatus(n === 0 ? "차이 없음 — 두 파일이 완전히 일치합니다." : `차이 ${n}건을 찾았습니다.`,
-          n === 0 ? "ok" : "error");
+        // 결과를 다 뽑았으니 원본 파일은 더 필요 없다 — 바로 놓아준다.
+        // (lastResult를 null로 만드는 show()를 거치지 않으므로 다운로드는 그대로 가능)
+        clearUploadedFiles();
+        setStatus((n === 0 ? "차이 없음 — 두 파일이 완전히 일치합니다." : `차이 ${n}건을 찾았습니다.`) +
+          " 올린 파일은 화면에서 삭제했습니다.", n === 0 ? "ok" : "error");
         // 차이가 없어도 비교자료(요약/전체대조)는 받아볼 수 있어야 하므로 항상 노출한다
         els.downloadBtn.style.display = "inline-block";
       } catch (err) {
