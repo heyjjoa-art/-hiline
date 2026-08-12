@@ -71,6 +71,27 @@
     border-left-color: var(--accent);
     font-weight: 600;
   }
+  /* 메뉴 순서 바꾸기(끌어다 놓기) — 끄는 중인 항목은 흐리게, 놓일 자리는 선으로 표시한다.
+     경계선은 border 대신 box-shadow(inset)로 그려서 항목 높이가 흔들리지 않게 한다. */
+  nav.sidebar li.menu-item.dragging { opacity: .4; }
+  nav.sidebar li.menu-item.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+  nav.sidebar li.menu-item.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+  .menu-reset-btn {
+    display: block;
+    margin: 10px 20px 0;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .menu-reset-btn:hover { border-color: var(--accent); color: var(--accent); }
+  /* 사이드바를 접으면 글자가 사라지므로 버튼도 같이 숨긴다 */
+  nav.sidebar.collapsed .menu-reset-btn { display: none; }
+
   /* 메뉴 접기/펼치기 토글 버튼 — 사이드바 오른쪽 위 모서리에 걸쳐서 항상 보이게 둔다 */
   .sidebar-toggle-btn {
     position: absolute;
@@ -186,7 +207,105 @@
     min-height: 18px;
   }
 
-  /* PDF 파일 편집기 */
+  /* 필요서류 */
+  .rd-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .rd-select-all {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .rd-summary {
+    flex: 1 1 auto;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .rd-action-btn {
+    padding: 7px 14px;
+    border: none;
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .rd-action-btn:hover:not(:disabled) { opacity: .9; }
+  .rd-action-btn:disabled { opacity: .4; cursor: default; }
+  .rd-list { margin-top: 4px; }
+  .rd-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 4px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .rd-item:last-child { border-bottom: none; }
+  .rd-item:hover { background: var(--accent-bg); }
+  /* 이름이 길어도 뒤쪽 버튼을 밀어내지 않도록 줄임표 처리 */
+  .rd-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+  }
+  .rd-meta {
+    flex: 0 0 auto;
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+  .rd-mini-btn {
+    flex: 0 0 auto;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--panel);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .rd-mini-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .rd-del-btn:hover { border-color: #dc2626; color: #dc2626; }
+  .rd-store {
+    margin: 6px 0 0;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  /* PDF 편집기 — "나누기"/"합치기" 탭 */
+  .pdf-tabs {
+    display: flex;
+    gap: 4px;
+    margin: 20px 0 0;
+  }
+  .pdf-tab {
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    background: var(--panel);
+    border-radius: 6px 6px 0 0;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .pdf-tab.active {
+    background: #fff;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  /* 탭 바로 아래 카드가 탭과 이어져 보이도록 위쪽 여백을 없앤다 */
+  .pdf-pane > .card:first-child { margin-top: 0; border-top-left-radius: 0; }
+
   .pdf-info {
     margin-top: 16px;
     padding: 8px 12px;
@@ -257,6 +376,78 @@
     font-size: 13px;
     color: var(--text-dim);
   }
+
+  /* PDF 파일 변환 (여러 PDF/이미지 → 1개) */
+  .pm-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+  }
+  .pm-summary {
+    flex: 1 1 auto;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .pm-mini-btn {
+    padding: 5px 11px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--panel);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .pm-mini-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .pm-mini-btn:disabled { opacity: .4; cursor: default; }
+  .pm-del-btn:hover:not(:disabled) { border-color: #dc2626; color: #dc2626; }
+  /* 파일이 많아도 화면을 밀어내지 않게 최대 높이를 두고 스크롤시킨다 */
+  .pm-list {
+    margin-top: 10px;
+    max-height: 320px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .pm-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .pm-item:last-child { border-bottom: none; }
+  .pm-item:hover { background: var(--accent-bg); }
+  .pm-order {
+    flex: 0 0 24px;
+    text-align: right;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+  /* 파일명이 길어도 뒤쪽 버튼을 밀어내지 않도록 줄임표 처리 */
+  .pm-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pm-meta {
+    flex: 0 0 auto;
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+  .pm-options {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 14px;
+    font-size: 13px;
+  }
+  .pm-options-label { color: var(--text-dim); }
+  .pm-options label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
 
   /* 세금계산서 합계표 비교 — 결과 표는 읽기 전용이라 .wf-table(table-layout:fixed + input 스타일)을
      쓰지 않고 내용에 맞춰 폭이 잡히는 자체 스타일을 쓴다 */
@@ -767,6 +958,9 @@
   <button id="sidebar-toggle" class="sidebar-toggle-btn" title="메뉴 접기/펼치기" type="button">‹</button>
   <h1><span class="sidebar-title-text">업무 자동화 도구</span></h1>
   <ul id="menu-list"></ul>
+  <button id="menu-reset-order" class="menu-reset-btn" type="button" title="메뉴 순서를 처음 상태로 되돌립니다">
+    <span class="sidebar-title-text">순서 초기화</span>
+  </button>
 </nav>
 
 <main id="content"></main>
@@ -779,6 +973,8 @@
 <script src="tools/tax-invoice-convert.js"></script>
 <script src="tools/tax-summary-compare.js"></script>
 <script src="tools/pdf-editor.js"></script>
+<script src="tools/pdf-merge.js"></script>
+<script src="tools/required-docs.js"></script>
 <script src="tools/welfare-management.js"></script>
 <script src="tools/agency-commission.js"></script>
 <script src="tools/giro-draft-preview.js"></script>
@@ -793,7 +989,8 @@
     { id: "tax-summary-compare", label: "세금계산서 합계표 비교" },
     { id: "agency-commission", label: "대리점 수수료 정산" },
     { id: "giro-draft", label: "지로청구서 자동기안" },
-    { id: "pdf-editor", label: "PDF 파일 편집기" },
+    { id: "pdf-editor", label: "PDF 편집기" },
+    { id: "required-docs", label: "필요서류" },
   ];
 
   const sections = {
@@ -886,12 +1083,17 @@
     `,
 
     "pdf-editor": () => `
-      <h2>PDF 파일 편집기</h2>
+      <h2>PDF 편집기</h2>
       <p class="desc">
-        PDF를 올려서 <strong>한 장씩 낱장 파일로 분할</strong>하거나, <strong>원하는 쪽만 골라 한 파일로</strong>
-        저장합니다. 파일은 서버로 전송되지 않고 브라우저 안에서만 처리됩니다.
+        PDF를 <strong>나누거나 합칩니다</strong>. 파일은 서버로 전송되지 않고 브라우저 안에서만 처리됩니다.
       </p>
 
+      <div class="pdf-tabs">
+        <button class="pdf-tab active" data-pane="pdf-pane-split">나누기 (분할 · 쪽 추출)</button>
+        <button class="pdf-tab" data-pane="pdf-pane-merge">합치기 (여러 PDF·이미지 → 1개)</button>
+      </div>
+
+      <div id="pdf-pane-split" class="pdf-pane">
       <div class="card">
         <div id="pdf-dropzone" class="dropzone">
           <span class="pdf-zone-label">📄 PDF 파일을 여기로 드래그하거나 클릭해서 선택하세요</span>
@@ -925,6 +1127,81 @@
         </div>
 
         <div id="pdf-status" class="status-msg"></div>
+      </div>
+      </div>
+
+      <div id="pdf-pane-merge" class="pdf-pane" style="display:none;">
+      <div class="card">
+        <p class="desc" style="margin-top:0;">
+          여러 개의 <strong>PDF와 이미지 파일을 한 개의 PDF로</strong> 합칩니다. 목록에 있는
+          순서대로 이어붙이며, ▲▼ 버튼으로 순서를 바꿀 수 있습니다.
+        </p>
+        <div id="pm-dropzone" class="dropzone">
+          <span>📎 PDF·이미지 파일을 여기로 드래그하거나 클릭해서 선택하세요 (여러 개 가능)</span>
+          <input type="file" id="pm-file" accept=".pdf,image/*" multiple style="display:none">
+        </div>
+
+        <div id="pm-panel" style="display:none;">
+          <div class="pm-toolbar">
+            <span id="pm-summary" class="pm-summary"></span>
+            <button id="pm-sort-btn" class="pm-mini-btn">파일명 순 정렬</button>
+            <button id="pm-clear-btn" class="pm-mini-btn">목록 비우기</button>
+          </div>
+
+          <div id="pm-list" class="pm-list"></div>
+
+          <div class="pm-options">
+            <span class="pm-options-label">이미지 페이지 크기</span>
+            <label><input type="radio" name="pm-page-mode" value="fit" checked> A4에 맞춤 (비율 유지·가운데)</label>
+            <label><input type="radio" name="pm-page-mode" value="natural"> 이미지 크기 그대로</label>
+          </div>
+
+          <button id="pm-merge-btn" class="btn">PDF 1개로 저장</button>
+        </div>
+
+        <div id="pm-status" class="status-msg"></div>
+      </div>
+      </div>
+    `,
+
+    "required-docs": () => `
+      <h2>필요서류</h2>
+      <p class="desc">
+        통장사본·사업자등록증처럼 자주 인쇄하거나 제출하는 서류를 등록해두고 바로 꺼내 씁니다.
+        여러 건을 골라 <strong>한 PDF로 합쳐서</strong> 인쇄하거나 저장할 수 있습니다.
+      </p>
+
+      <div class="card">
+        <div id="rd-dropzone" class="dropzone" style="padding:24px 16px;">
+          <span>📎 PDF·이미지 파일을 여기로 드래그하거나 클릭해서 등록하세요 (여러 개 가능)</span>
+          <input type="file" id="rd-file" accept=".pdf,image/*" multiple style="display:none">
+        </div>
+
+        <div class="rd-toolbar">
+          <label class="rd-select-all"><input type="checkbox" id="rd-select-all"> 전체 선택</label>
+          <span id="rd-summary" class="rd-summary"></span>
+          <button id="rd-print-btn" class="rd-action-btn" disabled>선택 항목 인쇄</button>
+          <button id="rd-save-btn" class="rd-action-btn" disabled>선택 항목 PDF로 저장</button>
+        </div>
+
+        <div id="rd-list" class="rd-list"></div>
+        <p id="rd-empty" class="desc" style="margin:12px 0 0;">
+          아직 등록된 서류가 없습니다. 위에 파일을 올려주세요.
+        </p>
+
+        <div id="rd-status" class="status-msg"></div>
+        <p id="rd-store" class="rd-store"></p>
+      </div>
+
+      <div class="card">
+        <h3>알아두기 <span class="badge">참고</span></h3>
+        <ul style="margin:8px 0 0; padding-left:20px; line-height:1.8; color:var(--text-dim);">
+          <li>등록한 파일은 <strong>이 브라우저 안에만</strong> 저장됩니다 — 서버로 올라가지 않습니다.
+              다른 PC나 다른 브라우저에서는 보이지 않고, 브라우저 데이터를 지우면 함께 지워집니다.</li>
+          <li>인쇄는 항상 PDF로 변환해서 진행합니다(이미지도 A4에 맞춰 들어갑니다).
+              인쇄 창이 안 뜨면 "다운로드"로 받아서 인쇄해주세요.</li>
+          <li>중요한 원본은 별도 폴더에도 보관해두시는 걸 권합니다.</li>
+        </ul>
       </div>
     `,
 
@@ -1082,7 +1359,22 @@
     welfare: (root) => window.HilineWelfareTool.init(root),
     "agency-commission": (root) => window.HilineAgencyCommissionTool.init(root),
     "giro-draft": (root) => window.HilineGiroDraftTool.init(root),
-    "pdf-editor": (root) => window.HilinePdfEditorTool.init(root),
+    // PDF 편집기는 "나누기"와 "합치기"를 탭으로 한 화면에 담는다.
+    // 두 기능은 각각 다른 도구 파일이고 엘리먼트 id도 겹치지 않아 같은 root에 나란히 초기화한다.
+    "pdf-editor": (root) => {
+      window.HilinePdfEditorTool.init(root);
+      window.HilinePdfMergeTool.init(root);
+      const tabs = root.querySelectorAll(".pdf-tab");
+      tabs.forEach(tab => {
+        tab.addEventListener("click", () => {
+          tabs.forEach(t => t.classList.toggle("active", t === tab));
+          root.querySelectorAll(".pdf-pane").forEach(pane => {
+            pane.style.display = pane.id === tab.dataset.pane ? "" : "none";
+          });
+        });
+      });
+    },
+    "required-docs": (root) => window.HilineRequiredDocsTool.init(root),
   };
 
   const menuListEl = document.getElementById("menu-list");
@@ -1117,15 +1409,102 @@
     if (sectionInit[id]) sectionInit[id](contentEl);
   }
 
-  menuItems.forEach(item => {
-    const li = document.createElement("li");
-    li.className = "menu-item";
-    li.dataset.id = item.id;
-    li.textContent = item.label;
-    li.addEventListener("click", () => render(item.id));
-    menuListEl.appendChild(li);
+  // 메뉴 순서는 사용자가 끌어서 바꿀 수 있고, 바꾼 순서는 localStorage에 저장해 다음에도 유지된다.
+  const MENU_ORDER_KEY = "hiline_menu_order";
+
+  // 저장된 순서를 현재 메뉴 목록에 입힌다.
+  // 나중에 메뉴가 추가돼도(저장된 순서엔 없는 id) 사라지지 않고 뒤에 붙도록 하고,
+  // 저장된 순서에만 있고 지금은 없는 id는 조용히 버린다.
+  function applySavedOrder(items, savedIds) {
+    if (!Array.isArray(savedIds) || !savedIds.length) return items.slice();
+    const byId = new Map(items.map(it => [it.id, it]));
+    const ordered = [];
+    savedIds.forEach(id => {
+      const item = byId.get(id);
+      if (item) { ordered.push(item); byId.delete(id); }
+    });
+    return ordered.concat(items.filter(it => byId.has(it.id)));
+  }
+
+  function loadMenuOrder() {
+    try {
+      return JSON.parse(localStorage.getItem(MENU_ORDER_KEY) || "null");
+    } catch (err) {
+      return null;
+    }
+  }
+
+  let orderedMenu = applySavedOrder(menuItems, loadMenuOrder());
+
+  function saveMenuOrder() {
+    localStorage.setItem(MENU_ORDER_KEY, JSON.stringify(orderedMenu.map(it => it.id)));
+  }
+
+  let dragId = null;
+
+  function renderMenu() {
+    menuListEl.innerHTML = "";
+    const activeId = document.querySelector("#menu-list li.active")?.dataset.id;
+
+    orderedMenu.forEach(item => {
+      const li = document.createElement("li");
+      li.className = "menu-item";
+      li.dataset.id = item.id;
+      li.textContent = item.label;
+      li.draggable = true;
+      li.title = "끌어서 순서를 바꿀 수 있습니다";
+      li.addEventListener("click", () => render(item.id));
+
+      li.addEventListener("dragstart", e => {
+        dragId = item.id;
+        li.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+        // 파이어폭스는 데이터가 없으면 드래그를 시작하지 않는다
+        e.dataTransfer.setData("text/plain", item.id);
+      });
+      li.addEventListener("dragend", () => {
+        dragId = null;
+        menuListEl.querySelectorAll("li").forEach(el => el.classList.remove("dragging", "drop-before", "drop-after"));
+      });
+      li.addEventListener("dragover", e => {
+        if (!dragId || dragId === item.id) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        // 칸의 위쪽 절반이면 앞에, 아래쪽 절반이면 뒤에 놓는다
+        const rect = li.getBoundingClientRect();
+        const after = e.clientY > rect.top + rect.height / 2;
+        li.classList.toggle("drop-before", !after);
+        li.classList.toggle("drop-after", after);
+      });
+      li.addEventListener("dragleave", () => li.classList.remove("drop-before", "drop-after"));
+      li.addEventListener("drop", e => {
+        if (!dragId || dragId === item.id) return;
+        e.preventDefault();
+        const rect = li.getBoundingClientRect();
+        const after = e.clientY > rect.top + rect.height / 2;
+        const from = orderedMenu.findIndex(it => it.id === dragId);
+        if (from < 0) return;
+        const [moved] = orderedMenu.splice(from, 1);
+        let to = orderedMenu.findIndex(it => it.id === item.id);
+        if (to < 0) to = orderedMenu.length - 1;
+        orderedMenu.splice(after ? to + 1 : to, 0, moved);
+        saveMenuOrder();
+        renderMenu();
+      });
+
+      if (item.id === activeId) li.classList.add("active");
+      menuListEl.appendChild(li);
+    });
+  }
+
+  // 순서를 원래대로 되돌리는 버튼 (메뉴 목록 아래)
+  document.getElementById("menu-reset-order").addEventListener("click", () => {
+    localStorage.removeItem(MENU_ORDER_KEY);
+    orderedMenu = menuItems.slice();
+    renderMenu();
   });
 
+  renderMenu();
   render("welfare");
 </script>
 
