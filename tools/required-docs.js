@@ -184,35 +184,126 @@
     return new Blob([bytes], { type: "application/pdf" });
   }
 
-  // 숨긴 iframe에 PDF를 올려 인쇄 대화상자를 띄운다.
-  // 새 창으로 열면 팝업 차단에 걸리는 경우가 있어 iframe 방식을 쓴다.
-  function printPdfBlob(blob) {
+  /*
+   * 인쇄에 대해 (중요)
+   * ------------------
+   * 원래 blob URL을 iframe에 올리고 `iframe.contentWindow.print()`를 부르는 방식이었는데,
+   * index.html을 file://로 여는 이 환경에서는 이게 동작하지 않는다. 이유가 두 가지 겹친다.
+   *
+   *  1) file:// 문서는 브라우저가 origin을 "null"(불투명 origin)로 취급한다. 여기서 만든
+   *     blob URL은 `blob:null/...`이 되고, 그 iframe은 부모(file://) 기준으로 교차 출처다.
+   *     그래서 `iframe.contentWindow.print()`에 손대는 순간 SecurityError가 난다
+   *     → 잡아서 "인쇄 창을 열지 못했습니다" 메시지만 뜨고 실제 인쇄 대화상자는 안 뜬다.
+   *  2) 설령 출처가 같아도, iframe 안의 PDF는 크롬 내장 PDF 뷰어(플러그인 문서)가 그린다.
+   *     이건 스크립트로 print()를 부를 수 있는 일반 HTML 문서가 아니라서 역시 신뢰할 수 없다.
+   *
+   * 그래서 인쇄 경로를 둘로 나눈다.
+   *  - 이미지만 고른 경우: PDF를 거치지 않고, 부모와 같은 출처인 iframe(srcdoc)에 이미지를
+   *    data URL로 넣은 HTML을 그려서 인쇄한다. 이건 교차 출처 문제가 없어 확실히 동작한다.
+   *  - PDF가 하나라도 섞인 경우: 브라우저 안에서 PDF를 직접 인쇄할 방법이 없으므로 새 탭으로
+   *    열어 사용자가 Ctrl+P를 누르게 안내하고, 새 탭도 막히면 파일로 내려준다.
+   */
+
+  function blobToDataUrl(blob) {
     return new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(blob);
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error || new Error("파일을 읽지 못했습니다."));
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  }
+
+  // 이미지들을 A4 한 장에 하나씩 넣은 인쇄용 HTML을 만든다
+  function buildImagePrintHtml(entries) {
+    const pages = entries.map(e => `
+      <div class="page"><img src="${e.dataUrl}" alt="${escapeHtml(e.name)}"></div>`).join("");
+    return `<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<title>필요서류 인쇄</title>
+<style>
+  @page { size: A4; margin: 10mm; }
+  html, body { margin: 0; padding: 0; }
+  .page {
+    display: flex; align-items: center; justify-content: center;
+    width: 100%; height: 277mm;      /* A4 세로 297mm - 위아래 여백 10mm씩 */
+    page-break-after: always; break-after: page;
+  }
+  .page:last-child { page-break-after: auto; break-after: auto; }
+  .page img { max-width: 100%; max-height: 100%; object-fit: contain; }
+</style></head><body>${pages}</body></html>`;
+  }
+
+  // 같은 출처(srcdoc) iframe에 HTML을 그려서 인쇄한다 — file://에서도 동작하는 경로
+  function printHtml(html) {
+    return new Promise((resolve, reject) => {
       const iframe = document.createElement("iframe");
+      iframe.setAttribute("aria-hidden", "true");
       iframe.style.cssText = "position:fixed; right:0; bottom:0; width:0; height:0; border:0;";
-      let done = false;
-      const cleanup = () => {
-        if (done) return;
-        done = true;
-        // 인쇄 대화상자가 뜬 동안 iframe이 사라지면 안 되므로 넉넉히 기다렸다 정리한다
-        setTimeout(() => { URL.revokeObjectURL(url); iframe.remove(); }, 60000);
-      };
       iframe.onload = () => {
         try {
-          iframe.contentWindow.focus();
-          iframe.contentWindow.print();
-          cleanup();
-          resolve();
+          const win = iframe.contentWindow;
+          // 이미지가 다 그려지기 전에 인쇄하면 빈 장이 나올 수 있어 한 박자 기다린다
+          setTimeout(() => {
+            try {
+              win.focus();
+              win.print();
+              resolve();
+            } catch (err) {
+              reject(new Error("인쇄 창을 열지 못했습니다. '다운로드'로 받아서 인쇄해주세요."));
+            } finally {
+              setTimeout(() => iframe.remove(), 60000);
+            }
+          }, 250);
         } catch (err) {
-          cleanup();
-          reject(new Error("인쇄 창을 열지 못했습니다. 대신 '다운로드'로 받아서 인쇄해주세요."));
+          iframe.remove();
+          reject(new Error("인쇄 창을 열지 못했습니다. '다운로드'로 받아서 인쇄해주세요."));
         }
       };
-      iframe.onerror = () => { cleanup(); reject(new Error("인쇄용 파일을 불러오지 못했습니다.")); };
-      iframe.src = url;
+      iframe.onerror = () => { iframe.remove(); reject(new Error("인쇄용 화면을 만들지 못했습니다.")); };
       document.body.appendChild(iframe);
+      iframe.srcdoc = html;
     });
+  }
+
+  // PDF는 새 탭으로 열어 사용자가 직접 인쇄하게 한다(브라우저 제약).
+  // 반환값으로 어떻게 처리했는지 알려줘서 화면 안내 문구를 맞출 수 있게 한다.
+  function openPdfForPrint(blob, fileName) {
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, "_blank");
+    if (win) {
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      return "opened";
+    }
+    // 새 탭이 막히면 파일로 내려준다
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    return "downloaded";
+  }
+
+  // 고른 서류를 인쇄한다. 이미지만이면 바로 인쇄, PDF가 섞이면 새 탭/다운로드로 넘긴다.
+  async function printDocs(records) {
+    if (!records.length) throw new Error("인쇄할 서류를 골라주세요.");
+
+    if (records.every(rec => kindOf(rec) === "image")) {
+      const entries = [];
+      for (const rec of records) {
+        entries.push({ name: rec.name, dataUrl: await blobToDataUrl(rec.blob) });
+      }
+      await printHtml(buildImagePrintHtml(entries));
+      return { mode: "printed" };
+    }
+
+    const blob = await buildPdf(records);
+    const name = records.length === 1
+      ? `${records[0].name.replace(/\.[^.]+$/, "")}.pdf`
+      : "필요서류.pdf";
+    return { mode: openPdfForPrint(blob, name) };
   }
 
   function downloadBlob(blob, fileName) {
@@ -222,6 +313,14 @@
     a.download = fileName;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  // 인쇄 경로가 셋(바로 인쇄 / 새 탭 / 다운로드)이라 결과를 그대로 알려준다.
+  // PDF는 브라우저 제약상 바로 인쇄가 안 되므로, 왜 새 탭이 떴는지 사용자가 알 수 있게 한다.
+  function printResultMessage(result) {
+    if (result.mode === "printed") return "인쇄 창을 열었습니다.";
+    if (result.mode === "opened") return "새 탭에서 PDF를 열었습니다. 그 탭에서 Ctrl+P로 인쇄해주세요 (PDF는 브라우저가 바로 인쇄하지 못합니다).";
+    return "새 탭이 차단돼 파일로 내려받았습니다. 받은 파일을 열어 인쇄해주세요.";
   }
 
   function formatSize(bytes) {
@@ -325,8 +424,7 @@
           setBusy(true);
           try {
             setStatus(`"${doc.name}" 인쇄 준비 중...`);
-            await printPdfBlob(await buildPdf([doc]));
-            setStatus("인쇄 창을 열었습니다.", "ok");
+            setStatus(printResultMessage(await printDocs([doc])), "ok");
           } catch (err) {
             console.error(err);
             setStatus(err.message || "인쇄에 실패했습니다.", "error");
@@ -432,8 +530,7 @@
       setBusy(true);
       try {
         setStatus(`${picked.length}건 인쇄 준비 중...`);
-        await printPdfBlob(await buildPdf(picked));
-        setStatus("인쇄 창을 열었습니다.", "ok");
+        setStatus(printResultMessage(await printDocs(picked)), "ok");
       } catch (err) {
         console.error(err);
         setStatus(err.message || "인쇄에 실패했습니다.", "error");
@@ -469,6 +566,9 @@
 
   window.HilineRequiredDocsTool = {
     init,
-    _internal: { kindOf, buildPdf, formatSize, formatDate, storage, pickBackend, base64ToBlob },
+    _internal: {
+      kindOf, buildPdf, formatSize, formatDate, storage, pickBackend, base64ToBlob,
+      printDocs, buildImagePrintHtml, printResultMessage, escapeHtml,
+    },
   };
 })();
