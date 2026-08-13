@@ -34,7 +34,8 @@ const { launchChrome: launchHiworksChrome, isChromeRunning: isHiworksChromeRunni
 const { fetchYearLeaveEvents } = require('./lib/hiworks-scrape');
 const { computeHiworksSync } = require('./lib/hiworks-match');
 
-const PORT = 8787;
+// 기본 8787. 다른 프로그램이 이 포트를 쓰고 있으면 HILINE_PORT로 바꿔 띄울 수 있다.
+const PORT = Number(process.env.HILINE_PORT) || 8787;
 
 let giroJob = { state: 'idle', log: [] };
 let himsJob = { state: 'idle', log: [] };
@@ -264,6 +265,78 @@ function readJsonBody(req) {
   });
 }
 
+// ───────────────────────── 정적 파일 서빙 ─────────────────────────
+// index.html을 file://로 열면 브라우저가 origin을 "null"(불투명)로 취급해서 제약이 많다
+// (PDF 인쇄 불가, IndexedDB 제한, 로컬 fetch 차단 등). 그래서 이 서버가 프로젝트 폴더를
+// http://localhost:8787 로 같이 서빙한다. file://로 여는 기존 방식도 그대로 동작한다.
+
+// 프로젝트 루트 = tools/helper-server 에서 두 단계 위
+const SITE_ROOT = path.resolve(__dirname, '..', '..');
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.pdf': 'application/pdf',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.xls': 'application/vnd.ms-excel',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.map': 'application/json; charset=utf-8',
+};
+
+// 프로젝트 폴더 밖(예: /../../Windows/...)으로 빠져나가지 못하게 막는다
+function resolveSitePath(pathname) {
+  let decoded;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return null;
+  }
+  if (decoded.includes('\0')) return null;
+  if (decoded === '/' || decoded === '') decoded = '/index.html';
+
+  const full = path.resolve(SITE_ROOT, '.' + decoded);
+  const rel = path.relative(SITE_ROOT, full);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  return full;
+}
+
+function serveStatic(pathname, res) {
+  const filePath = resolveSitePath(pathname);
+  if (!filePath) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('접근할 수 없는 경로입니다.');
+    return;
+  }
+
+  fs.stat(filePath, (err, stat) => {
+    if (err || !stat.isFile()) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('파일을 찾을 수 없습니다: ' + pathname);
+      return;
+    }
+    const type = MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
+    // 도구 파일을 고치고 새로고침했는데 옛 파일이 뜨면 헷갈리므로 캐시를 끈다
+    res.writeHead(200, {
+      'Content-Type': type,
+      'Content-Length': stat.size,
+      'Cache-Control': 'no-cache',
+    });
+    fs.createReadStream(filePath)
+      .on('error', () => res.end())
+      .pipe(res);
+  });
+}
+
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -361,11 +434,19 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ── 정적 파일 (index.html 허브 자체를 http로 띄운다) ──
+  // API 경로에 안 걸린 GET 요청은 프로젝트 폴더의 파일로 처리한다.
+  if (req.method === 'GET') {
+    serveStatic(pathname, res);
+    return;
+  }
+
   res.writeHead(404);
   res.end();
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`하이라인닷넷 통합 도우미 서버 실행 중: http://localhost:${PORT}`);
-  console.log('이 창은 "메일" / "대리점 수수료 정산(HIMS 동기화)" / "지로청구서 자동기안" 메뉴가 동작하는 동안 계속 열려있어야 합니다.');
+  console.log(`하이라인닷넷 통합 도우미 서버 실행 중`);
+  console.log(`  화면 열기 → http://localhost:${PORT}/`);
+  console.log('이 창은 도구를 쓰는 동안 계속 열려있어야 합니다.');
 });

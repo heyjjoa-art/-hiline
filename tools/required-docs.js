@@ -268,7 +268,49 @@
     });
   }
 
-  // PDF는 새 탭으로 열어 사용자가 직접 인쇄하게 한다(브라우저 제약).
+  // http(s)로 열렸으면 blob URL이 페이지와 같은 출처가 되어 iframe 안의 PDF도 인쇄할 수 있다.
+  // file://에서는 origin이 "null"이라 이 방법이 통하지 않는다.
+  function canPrintPdfInPage() {
+    return location.protocol === "http:" || location.protocol === "https:";
+  }
+
+  // 같은 출처일 때만 쓰는 경로 — blob URL을 iframe에 올려 바로 인쇄한다
+  function printPdfInIframe(blob) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(blob);
+      const iframe = document.createElement("iframe");
+      iframe.setAttribute("aria-hidden", "true");
+      iframe.style.cssText = "position:fixed; right:0; bottom:0; width:0; height:0; border:0;";
+      let settled = false;
+      const fail = msg => {
+        if (settled) return;
+        settled = true;
+        URL.revokeObjectURL(url);
+        iframe.remove();
+        reject(new Error(msg));
+      };
+      iframe.onload = () => {
+        // PDF 뷰어가 준비되기 전에 부르면 아무 일도 안 일어나서 한 박자 기다린다
+        setTimeout(() => {
+          if (settled) return;
+          try {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+            settled = true;
+            resolve();
+            setTimeout(() => { URL.revokeObjectURL(url); iframe.remove(); }, 60000);
+          } catch (err) {
+            fail("iframe 인쇄 실패");
+          }
+        }, 400);
+      };
+      iframe.onerror = () => fail("인쇄용 파일을 불러오지 못했습니다.");
+      iframe.src = url;
+      document.body.appendChild(iframe);
+    });
+  }
+
+  // PDF는 새 탭으로 열어 사용자가 직접 인쇄하게 한다(file://에서의 대체 경로).
   // 반환값으로 어떻게 처리했는지 알려줘서 화면 안내 문구를 맞출 수 있게 한다.
   function openPdfForPrint(blob, fileName) {
     const url = URL.createObjectURL(blob);
@@ -303,6 +345,16 @@
     const name = records.length === 1
       ? `${records[0].name.replace(/\.[^.]+$/, "")}.pdf`
       : "필요서류.pdf";
+
+    // http로 열렸으면 페이지 안에서 바로 인쇄를 시도하고, 안 되면 새 탭으로 넘긴다
+    if (canPrintPdfInPage()) {
+      try {
+        await printPdfInIframe(blob);
+        return { mode: "printed" };
+      } catch (err) {
+        console.warn("페이지 안 PDF 인쇄에 실패해 새 탭으로 엽니다:", err && err.message);
+      }
+    }
     return { mode: openPdfForPrint(blob, name) };
   }
 
@@ -469,9 +521,13 @@
       const ids = new Set(docs.map(d => d.id));
       [...selected].forEach(id => { if (!ids.has(id)) selected.delete(id); });
       render();
-      els.store.textContent = backend === "idb"
+      const where = backend === "idb"
         ? "보관 위치: 이 브라우저 (IndexedDB)"
         : "보관 위치: 이 브라우저 (localStorage · 용량이 좁으니 큰 파일은 피해주세요)";
+      // file://로 열면 PDF 인쇄·저장 공간에 제약이 있어서, 서버로 여는 방법을 같이 안내한다
+      els.store.textContent = location.protocol === "file:"
+        ? `${where} · 지금은 파일로 직접 열려 있어 PDF는 새 탭에서 인쇄해야 합니다 — "업무도구 열기.bat"으로 열면 바로 인쇄됩니다.`
+        : where;
     }
 
     async function addFiles(fileList) {
