@@ -434,6 +434,14 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // ── 상태 확인 ──
+  // 이 서버가 "정적 서빙까지 되는 새 버전"인지 판별하는 용도.
+  // 옛 버전이 떠 있으면 이 경로가 404라, 실행 스크립트가 그걸로 구분해서 안내할 수 있다.
+  if (req.method === 'GET' && pathname === '/__hiline/health') {
+    sendJson(res, 200, { ok: true, static: true, port: PORT });
+    return;
+  }
+
   // ── 정적 파일 (index.html 허브 자체를 http로 띄운다) ──
   // API 경로에 안 걸린 GET 요청은 프로젝트 폴더의 파일로 처리한다.
   if (req.method === 'GET') {
@@ -445,8 +453,79 @@ const server = http.createServer((req, res) => {
   res.end();
 });
 
+// ───────────────────────── 시작 / 브라우저 열기 ─────────────────────────
+// `node server.js --open` 으로 실행하면 서버를 켜고 화면(허브)까지 브라우저로 띄운다.
+// 이미 서버가 떠 있으면 새로 띄우지 않고 브라우저만 연다 — 그래서 실행 스크립트를
+// 여러 번 눌러도 안전하다. 시작프로그램으로 자동 실행되는 쪽은 --open 없이 돌아서
+// 부팅할 때마다 브라우저가 뜨지는 않는다.
+
+const OPEN_BROWSER = process.argv.includes('--open');
+const SITE_URL = `http://localhost:${PORT}/`;
+
+function openBrowser(url) {
+  const { spawn } = require('child_process');
+  try {
+    if (process.platform === 'win32') {
+      // start의 첫 인자는 창 제목으로 먹히므로 빈 제목("")을 먼저 준다
+      spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' }).unref();
+    } else if (process.platform === 'darwin') {
+      spawn('open', [url], { detached: true, stdio: 'ignore' }).unref();
+    } else {
+      spawn('xdg-open', [url], { detached: true, stdio: 'ignore' }).unref();
+    }
+  } catch (err) {
+    console.log(`브라우저를 자동으로 열지 못했습니다. 직접 열어주세요: ${url}`);
+  }
+}
+
+// 이미 떠 있는 서버가 "정적 서빙이 되는 새 버전"인지 확인한다
+function probeExistingServer() {
+  return new Promise((resolve) => {
+    const req = http.get(
+      { host: '127.0.0.1', port: PORT, path: '/__hiline/health', timeout: 2000 },
+      (res) => {
+        res.resume();
+        resolve(res.statusCode === 200);
+      }
+    );
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+  });
+}
+
+server.on('error', async (err) => {
+  if (err.code !== 'EADDRINUSE') {
+    console.error('서버를 시작하지 못했습니다:', err.message);
+    process.exit(1);
+  }
+
+  // 포트를 이미 누가 쓰고 있다 — 우리 서버(새 버전)면 브라우저만 열고 끝낸다.
+  const isNewVersion = await probeExistingServer();
+  if (isNewVersion) {
+    console.log(`도우미 서버가 이미 실행 중입니다 (포트 ${PORT}).`);
+    if (OPEN_BROWSER) {
+      console.log(`  화면 열기 → ${SITE_URL}`);
+      openBrowser(SITE_URL);
+    }
+    process.exit(0);
+  }
+
+  // 옛 버전이 떠 있는 경우 — 그냥 브라우저를 열면 404만 보여서 원인을 알기 어렵다.
+  console.error('');
+  console.error(`포트 ${PORT}을(를) 이미 쓰고 있는데, 화면(허브) 서빙이 안 되는 옛 버전입니다.`);
+  console.error('예전에 실행해둔 도우미 서버가 아직 떠 있는 상태입니다. 아래 중 하나로 해결하세요.');
+  console.error('');
+  console.error('  1) 작업 관리자에서 기존 "Node.js" 프로세스를 종료한 뒤 이 파일을 다시 실행');
+  console.error('  2) 또는 PC를 재시작 (시작프로그램이 새 버전으로 다시 띄웁니다)');
+  console.error('');
+  console.error(`  포트를 바꿔서 띄우려면:  set HILINE_PORT=8899 && node server.js --open`);
+  console.error('');
+  process.exit(1);
+});
+
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`하이라인닷넷 통합 도우미 서버 실행 중`);
-  console.log(`  화면 열기 → http://localhost:${PORT}/`);
+  console.log(`  화면 열기 → ${SITE_URL}`);
   console.log('이 창은 도구를 쓰는 동안 계속 열려있어야 합니다.');
+  if (OPEN_BROWSER) openBrowser(SITE_URL);
 });

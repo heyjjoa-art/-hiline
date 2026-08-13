@@ -526,7 +526,7 @@
         : "보관 위치: 이 브라우저 (localStorage · 용량이 좁으니 큰 파일은 피해주세요)";
       // file://로 열면 PDF 인쇄·저장 공간에 제약이 있어서, 서버로 여는 방법을 같이 안내한다
       els.store.textContent = location.protocol === "file:"
-        ? `${where} · 지금은 파일로 직접 열려 있어 PDF는 새 탭에서 인쇄해야 합니다 — "업무도구 열기.bat"으로 열면 바로 인쇄됩니다.`
+        ? `${where} · 지금은 파일로 직접 열려 있어 PDF는 새 탭에서 인쇄해야 합니다 — "tools/helper-server/start-server-now.bat"으로 열면 바로 인쇄됩니다.`
         : where;
     }
 

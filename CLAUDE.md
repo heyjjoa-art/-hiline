@@ -15,8 +15,9 @@
   (배경색/테두리/폰트) 저장을 지원하지 않아(Pro 전용 기능) ExcelJS로 전환함 — 서식이 중요한
   작업이면 반드시 ExcelJS를 쓸 것
 - **화면을 여는 방법이 두 가지고, 제약이 다르다**:
-  - 권장: 프로젝트 루트의 `업무도구 열기.bat` → 도우미 서버가 프로젝트 폴더를 정적 서빙하고
-    `http://localhost:8787/`로 열린다. PDF 인쇄·IndexedDB·로컬 `fetch`가 전부 정상 동작.
+  - 권장: `tools/helper-server/start-server-now.bat`(= `node server.js --open`) → 도우미 서버가
+    프로젝트 폴더를 정적 서빙하고 `http://localhost:8787/`로 열린다. 서버가 이미 떠 있으면
+    브라우저만 연다. PDF 인쇄·IndexedDB·로컬 `fetch`가 전부 정상 동작.
   - 기존: `index.html`을 파일로 직접 열기(`file://`) → 그대로 동작하지만, origin이 `null`
     (불투명 origin)이라 blob URL이 교차 출처가 되어 **PDF를 스크립트로 인쇄할 수 없고**,
     IndexedDB가 막히는 환경이 있으며, 로컬 `fetch`가 차단된다.
