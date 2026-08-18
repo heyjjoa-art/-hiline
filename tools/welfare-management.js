@@ -210,6 +210,52 @@
     return data.leave.some((r) => normName(r.name) === target && r.resignDate);
   }
 
+  // 퇴사자를 표 맨 아래로 몰아서 보여준다(화면·엑셀 공통, 연차내역 기준). 재직자끼리·
+  // 퇴사자끼리의 기존 순서는 그대로 두는 안정 정렬이라, 손으로 맞춰둔 팀 배치 순서는
+  // 흐트러지지 않는다. 배열을 새로 갈아끼우지 않고 제자리에서(splice) 재배열하므로
+  // data.leave를 참조 중인 다른 코드에도 그대로 반영된다. 순서가 실제로 바뀌었으면
+  // true를 돌려준다(저장 필요 여부 판단용).
+  function sortResignedLast(records, isResignedFn) {
+    const active = records.filter((r) => !isResignedFn(r));
+    const resigned = records.filter((r) => isResignedFn(r));
+    if (!active.length || !resigned.length) return false;
+    const ordered = active.concat(resigned);
+    if (ordered.every((r, i) => r === records[i])) return false;
+    records.splice(0, records.length, ...ordered);
+    return true;
+  }
+
+  // 퇴사자 비고칸에 자동으로 붙는 문구. rec.note(사용자가 직접 쓴 비고)는 건드리지 않고
+  // 표시할 때만 앞에 붙이므로, 복귀 처리하면 자동으로 사라지고 사용자가 쓴 비고는 그대로 남는다.
+  function resignNoteText(rec) {
+    return rec.resignDate ? `${rec.resignDate} 퇴사` : "";
+  }
+
+  // 엑셀 비고칸에 들어갈 최종 문자열 — "26-07-29 퇴사 / (직접 쓴 비고)"
+  function noteWithResign(rec) {
+    return [resignNoteText(rec), String(rec.note || "").trim()].filter(Boolean).join(" / ");
+  }
+
+  // 복지포인트 레코드를 연차내역과 같은 사람 순서로 정렬해서 돌려준다(화면·엑셀 공통).
+  // data.points는 저장된 순서 그대로라 연차내역과 사람 순서가 어긋날 수 있다(예: 예전에
+  // 다른 순서로 입력/가져온 경우). 팀명 병합은 "바로 위 행과 같은 값인가"만 보므로, 순서가
+  // 어긋나면 연차내역에서는 같은 팀이 붙어 보여도 복지포인트에서는 병합이 끊겨 보인다 —
+  // 그래서 복지포인트도 항상 연차내역과 같은 사람 순서로 그린다(퇴사자를 아래로 몰아놓은
+  // 연차내역 순서를 그대로 물려받으므로 복지포인트 표·엑셀에도 자동으로 적용된다). 연차내역에
+  // 없는 이름(예전 데이터의 잔존 레코드)은 지우지 않고 맨 뒤에 그대로 붙여준다.
+  function orderPointsLikeLeave(leaveData, pointsData) {
+    const ordered = [];
+    const used = new Set();
+    (leaveData || []).forEach((lv) => {
+      const lvName = normName(lv.name);
+      if (!lvName) return;
+      const pr = (pointsData || []).find((p) => !used.has(p) && normName(p.name) === lvName);
+      if (pr) { ordered.push(pr); used.add(pr); }
+    });
+    (pointsData || []).forEach((p) => { if (!used.has(p)) ordered.push(p); });
+    return ordered;
+  }
+
   // 팀명/성명/직급/입사일/근속 연수는 연차내역이 기준이다 — 연차내역에서 수정하면 그 값을
   // 복지포인트의 같은 사람 레코드에도 바로 밀어넣어(자동반영) 두 표가 어긋나지 않게 한다.
   // 성명이 바뀐 경우는 oldName(수정 직전 이름)으로 복지포인트 쪽 레코드를 찾아야 한다
@@ -402,7 +448,10 @@
     data.leave.forEach(recalcLeave);
     const dittoFixed = normalizeDittoTeams(data.leave);
     dedupeLeaveByName();
-    if (!hasRealData || dittoFixed) saveLeave();
+    // 퇴사자를 맨 아래로 몰아둔다 — 이 기능이 생기기 전에 저장된 데이터는 재직/퇴사가 섞여
+    // 있을 수 있으므로 불러올 때마다 확인해서 필요하면 저장 순서 자체를 바로잡는다.
+    const resortedResigned = sortResignedLast(data.leave, (r) => !!r.resignDate);
+    if (!hasRealData || dittoFixed || resortedResigned) saveLeave();
   }
 
   // 일회성 데이터 보정: 같은 이름의 연차내역 레코드가 실수로 중복 생성된 경우(예: 이름에
@@ -982,7 +1031,7 @@
         ...slots,
         rec.baseline || "", rec.used || "", rec.remaining || "",
         rec.longService || "", rec.reserve || "", rec.family || "", rec.wedding || "", rec.maternity || "", rec.etc || "",
-        rec.yearTotal || "", rec.note || "",
+        rec.yearTotal || "", noteWithResign(rec),
       ]);
       row.getCell(USED_COL).fill = LEAVE_YELLOW_FILL;
       row.getCell(REMAIN_COL).fill = LEAVE_SALMON_FILL;
@@ -1118,7 +1167,9 @@
   async function buildWorkbook(d) {
     const wb = new ExcelJS.Workbook();
     addLeaveSheet(wb, d.leave);
-    addPointsSheet(wb, d.points);
+    // 복지포인트 시트도 연차내역과 같은 사람 순서로 써야 퇴사자가 여기서도 하단으로
+    // 몰려 보인다(orderPointsLikeLeave 주석 참고) — d.points 저장 순서를 그대로 쓰지 않는다.
+    addPointsSheet(wb, orderPointsLikeLeave(d.leave, d.points));
     return wb;
   }
 
@@ -1128,6 +1179,26 @@
     const input = document.createElement("input");
     input.type = "text";
     input.value = value || "";
+    input.addEventListener("change", () => onChange(input.value.trim()));
+    td.appendChild(input);
+    return td;
+  }
+
+  // 연차내역의 "비고" 칸 전용. 퇴사자면 자동 문구("26-07-29 퇴사")를 읽기전용 라벨로 앞에
+  // 붙이고, 그 뒤에 사용자가 직접 쓰는 비고를 그대로 편집 가능한 입력칸으로 둔다 — rec.note
+  // 자체에는 자동 문구를 섞어 쓰지 않으므로 복귀시키면 라벨만 사라지고 사용자가 쓴 비고는 남는다.
+  function noteCell(rec, onChange) {
+    const td = document.createElement("td");
+    const prefix = resignNoteText(rec);
+    if (prefix) {
+      const label = document.createElement("span");
+      label.className = "wf-resign-note-prefix";
+      label.textContent = prefix;
+      td.appendChild(label);
+    }
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = rec.note || "";
     input.addEventListener("change", () => onChange(input.value.trim()));
     td.appendChild(input);
     return td;
@@ -1358,7 +1429,7 @@
     const yearTotalTd = readonlyCell(rec.yearTotal);
     yearTotalTd.classList.add("wf-col-yeartotal");
     tr.appendChild(yearTotalTd);
-    tr.appendChild(textCell(rec.note, (v) => { rec.note = v; saveLeave(); }));
+    tr.appendChild(noteCell(rec, (v) => { rec.note = v; saveLeave(); }));
 
     if (rec.resignDate) tr.classList.add("wf-resigned-row");
 
@@ -1391,6 +1462,8 @@
         if (input === null) return; // 취소
         rec.resignDate = input.trim() || "미상";
       }
+      // 퇴사 처리하면 바로 맨 아래로, 복귀시키면 재직자 그룹(맨 아래 그룹 바로 앞)으로 옮긴다.
+      sortResignedLast(data.leave, (r) => !!r.resignDate);
       saveLeave();
       rerenderAll();
     });
@@ -1652,20 +1725,9 @@
     table.appendChild(thead);
     const tbody = document.createElement("tbody");
     table.appendChild(tbody);
-    // data.points는 저장된 순서 그대로라 연차내역과 사람 순서가 어긋날 수 있다(예: 예전에
-    // 다른 순서로 입력/가져온 경우). 팀명 병합(fakeTeamMerge)은 "바로 위 행과 같은 값인가"만
-    // 보므로, 순서가 어긋나면 연차내역에서는 같은 팀이 붙어 보여도 복지포인트에서는 병합이
-    // 끊겨 보인다 — 그래서 복지포인트도 항상 연차내역과 같은 사람 순서로 그린다. 연차내역에
-    // 없는 이름(예전 데이터의 잔존 레코드)은 지우지 않고 맨 뒤에 그대로 붙여준다.
-    const orderedPoints = [];
-    const used = new Set();
-    data.leave.forEach((lv) => {
-      const lvName = normName(lv.name);
-      if (!lvName) return;
-      const pr = data.points.find((p) => !used.has(p) && normName(p.name) === lvName);
-      if (pr) { orderedPoints.push(pr); used.add(pr); }
-    });
-    data.points.forEach((p) => { if (!used.has(p)) orderedPoints.push(p); });
+    // 연차내역과 같은 사람 순서로 그린다(퇴사자를 하단으로 몰아둔 순서도 그대로 물려받음) —
+    // 자세한 이유는 orderPointsLikeLeave 주석 참고.
+    const orderedPoints = orderPointsLikeLeave(data.leave, data.points);
 
     const openState = { current: null };
     const mergeState = { recompute: () => {} };
@@ -1895,6 +1957,9 @@
   window.HilineWelfareTool = { init };
 
   if (typeof module !== "undefined" && module.exports) {
-    module.exports = { parseWorkbookToData, recalcLeave, recalcPoints, buildWorkbook };
+    module.exports = {
+      parseWorkbookToData, recalcLeave, recalcPoints, buildWorkbook,
+      sortResignedLast, resignNoteText, noteWithResign, orderPointsLikeLeave,
+    };
   }
 })();

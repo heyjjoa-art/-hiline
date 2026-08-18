@@ -815,6 +815,16 @@
     background: #dbeafe;
     color: #1e40af;
   }
+  /* 연차내역 비고칸의 퇴사일 자동 문구 — 사용자가 직접 쓰는 비고 입력칸과 구분되도록
+     읽기전용 라벨로 위에 따로 표시한다(입력칸에 값으로 섞어 넣지 않음, welfare-management.js
+     noteCell 참고). */
+  .wf-resign-note-prefix {
+    display: block;
+    font-size: 9px;
+    color: #b91c1c;
+    white-space: nowrap;
+    line-height: 1.3;
+  }
   .wf-add-btn {
     margin-top: 12px;
   }
